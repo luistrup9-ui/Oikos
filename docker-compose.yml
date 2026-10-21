@@ -1,0 +1,37 @@
+# SGI + Caddy (HTTPS automático con Let's Encrypt). Uso: docker compose up -d --build
+services:
+  sgi:
+    build: .
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Bogota}
+      ADMIN_CLAVE_INICIAL: ${ADMIN_CLAVE_INICIAL:-}
+      SESSION_HORAS: ${SESSION_HORAS:-12}
+      BACKUP_HORA: ${BACKUP_HORA:-2}
+      BACKUP_KEEP: ${BACKUP_KEEP:-30}
+    volumes:
+      - sgi-data:/data          # base de datos y archivos adjuntos
+      - ./backups:/backups      # copias de seguridad (visibles en el servidor)
+    expose:
+      - "3100"                  # solo accesible desde Caddy, nunca publicado a internet
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - sgi
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:?Falta DOMINIO en el archivo .env}
+      CORREO_ADMIN: ${CORREO_ADMIN:?Falta CORREO_ADMIN en el archivo .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # certificados
+      - caddy-config:/config
+
+volumes:
+  sgi-data:
+  caddy-data:
+  caddy-config:

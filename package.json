@@ -1,0 +1,20 @@
+{
+  "name": "sgi",
+  "version": "1.0.0",
+  "description": "Sistema de Gestión Integral: documentos, indicadores, riesgos y auditorías",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "backup": "node backup.js",
+    "restaurar": "node restaurar.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.22.3",
+    "multer": "^1.4.4"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  }
+}
