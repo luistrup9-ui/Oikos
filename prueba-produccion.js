@@ -112,7 +112,7 @@ async function http(srv, ruta, { metodo, cuerpo, cookie, cabeceras } = {}) {
     esperar('La base restaurada está sana y trae todos los datos', bd.prepare('PRAGMA integrity_check').get().integrity_check === 'ok' && doc?.nombre === 'Procedimiento de prueba', doc);
     esperar('Incluye a los usuarios al momento del respaldo (admin, ana y despues)', nUsuarios === 3, nUsuarios);
     bd.close();
-    const adj = fs.readdirSync(path.join(destino, 'archivos')).filter(n => fs.statSync(path.join(destino, 'archivos', n)).isFile());   // sin subcarpetas (archivos/usuarios/ guarda fotos y firmas)
+    const adj = fs.readdirSync(path.join(destino, 'archivos'));
     esperar('Y el archivo adjunto con su contenido', adj.length === 1 && fs.readFileSync(path.join(destino, 'archivos', adj[0]), 'utf8') === 'contenido original del documento', adj);
 
     // Restaurar el PRIMER respaldo no existe (ya podado): se usa el más antiguo disponible, que ya incluye a "despues".

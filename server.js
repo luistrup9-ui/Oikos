@@ -18,8 +18,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
-  // Sin 'unsafe-inline': el frontend no usa onclick ni style="" en línea (ver docs/superpowers/specs/)
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'self'");
   if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
@@ -61,9 +60,7 @@ function token(req) {
 app.use('/api', (req, res, next) => {
   if (req.path === '/login') return next();
   const t = token(req);
-  // El nombre del archivo de foto/firma no sale nunca al navegador: solo si existe y su versión
-  const u = t && uno(`SELECT u.id, u.usuario, u.nombre, u.cargo, u.rol, u.proceso_id, u.empresa_id, u.debe_cambiar, u.correo,
-      (u.foto IS NOT NULL) tiene_foto, u.foto_v, (u.firma IS NOT NULL) tiene_firma, u.firma_v, u.pref_alerta_dias, u.pref_inicio
+  const u = t && uno(`SELECT u.id, u.usuario, u.nombre, u.cargo, u.rol, u.proceso_id, u.empresa_id, u.debe_cambiar
     FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ? AND u.activo = 1
       AND s.creada > datetime('now', ?)`, t, `-${SESION_SEGUNDOS} seconds`);
   if (!u) return res.status(401).json({ error: 'Sesión no válida' });
@@ -92,10 +89,9 @@ app.post('/api/logout', r((req, res) => {
   res.setHeader('Set-Cookie', cookieSesion(req, '', 0));
   return { ok: true };
 }));
-app.get('/api/yo', r(req => req.u));
+app.get('/api/yo', r(req => ({ ...req.u, empresa: uno('SELECT nombre FROM empresas WHERE id = ?', req.u.empresa_id)?.nombre })));
 
 app.get('/api/catalogos', r(req => ({
-  empresa: uno('SELECT nombre FROM empresas WHERE id = ?', req.u.empresa_id)?.nombre ?? '',
   procesos: todos('SELECT * FROM procesos WHERE empresa_id = ? ORDER BY orden', req.u.empresa_id),
   tipos: todos('SELECT * FROM tipos_documento ORDER BY id'),
   clases: todos('SELECT * FROM clases_documento ORDER BY nombre'),
@@ -309,11 +305,9 @@ app.get('/api/pendientes', r(req => {
     .map(d => ({ ...d, transiciones: transicionesDisponibles(d, req.u).filter(t => t.id !== 'eliminar').map(t => t.nombre) }))
     .filter(d => d.transiciones.length);
   const solicitudes = esCalidad(req.u) ? uno("SELECT COUNT(*) n FROM solicitudes WHERE empresa_id = ? AND estado = 'Pendiente'", req.u.empresa_id).n : 0;
-  // Ventana de alerta temprana: la que cada usuario fija en «Mi cuenta» (30 días por defecto)
-  const dias = Math.min(365, Math.max(1, Number(req.u.pref_alerta_dias) || 30));
   const porVencer = todos(`${SELECT_DOC} WHERE d.empresa_id = ? AND d.estado = 'VIGENTE' AND d.fecha_vencimiento IS NOT NULL
-    AND d.fecha_vencimiento <= date('now', ?) ORDER BY d.fecha_vencimiento`, req.u.empresa_id, `+${dias} days`);
-  return { documentos: docs, solicitudes, por_vencer: porVencer, dias_alerta: dias };
+    AND d.fecha_vencimiento <= date('now', '+30 days') ORDER BY d.fecha_vencimiento`, req.u.empresa_id);
+  return { documentos: docs, solicitudes, por_vencer: porVencer };
 }));
 
 // ---------- Estadísticas ----------
@@ -371,7 +365,9 @@ require('./indicadores')(app, { uno, todos, ejecutar, r, falla, transaccion, esC
 require('./riesgos')(app, { uno, todos, ejecutar, r, falla, esCalidad, ahora });
 require('./auditorias')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
 require('./admin')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
-require('./cuenta')(app, { uno, todos, ejecutar, r, falla, esCalidad, ahora });
+require('./glosario')(app, { uno, todos, ejecutar, r, falla, esCalidad, ahora });
+require('./procesos')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
+require('./mecanismos')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora, subida, DIR_ARCHIVOS });
 
 const PUERTO = process.env.PORT || 3100;
 const servidor = app.listen(PUERTO, process.env.HOST, () => console.log(`SGI listo en http://localhost:${PUERTO}`));

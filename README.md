@@ -8,40 +8,8 @@ Sistema independiente que replica la funcionalidad de gestión documental de Alm
 npm install
 node server.js        # http://localhost:3100
 node prueba-flujo.js  # prueba de punta a punta (con el servidor corriendo y la base limpia)
-node prueba-cuenta.js # Mi cuenta: perfil, foto, firma, contactos y permisos (igual: servidor corriendo y base limpia)
 ```
 La base `sgi.db` se crea sola con los procesos de Metalcof. Para empezar de cero, borra `sgi.db` y la carpeta `archivos/`.
-
-## Abrir con XAMPP: http://sgi.localhost/
-Apache (XAMPP) recibe las peticiones y se las pasa a Node (puerto 3100). Doble clic en **`iniciar-sgi.bat`**: enciende Apache y SGI si hacen falta y abre el navegador.
-La ventana minimizada «SGI» es el servidor: si la cierras, SGI se apaga (y Apache mostrará «SGI no está iniciado»; vuelve a ejecutar el `.bat`).
-- La configuración de Apache está en `C:\xampp\apache\conf\extra\httpd-sgi.conf` y se carga desde `httpd-vhosts.conf` con una línea `Include`.
-  Respaldos de los archivos originales: `*.sgi-bak-2026-10-20`. Para quitarlo: borra esa línea y reinicia Apache.
-- No funciona como `http://localhost/almera-replica/`: SGI es una app Node, no PHP, y usa rutas absolutas (`/api/...`).
-- Chrome, Edge y Firefox resuelven `*.localhost` solos. Con `curl` agrega `-H "Host: sgi.localhost"`.
-- Detrás de HTTPS (producción) se usa Caddy; ver `DESPLIEGUE.md`.
-
-## Estructura del frontend (`public/`)
-JavaScript nativo con módulos ES: sin frameworks y sin paso de compilación. Aspecto de la familia SiGeDo (Plus Jakarta Sans + Sora, acento teal).
-Detalle de las decisiones en `docs/superpowers/specs/2026-10-20-frontend-sgi-design.md`.
-```
-index.html          shell: login, menú lateral, contenido, diálogo y avisos; carga js/main.js
-css/                tokens → base → layout → components → vistas → motion (capas @layer, en ese orden)
-fonts/              Sora y Plus Jakarta Sans guardadas aquí (el CSP no permite fuentes externas)
-img/                logos de la marca (estufas, ergonatura, metalcof) recortados del SVG de SiGeDo; el banner los muestra en blanco
-js/main.js          arranque: aquí se listan, a mano y en orden, los módulos
-js/core/            api · sesion · router (registro de módulos, menú y rutas)
-js/ui/              componentes compartidos: tablas, KPIs, vacíos, esqueletos, iconos, modal, avisos, movimiento
-js/modules/         inicio · documental · indicadores · riesgos · auditorias · admin · cuenta
-js/compartido/      lógica que usan varios módulos (planes de acción, cambio de clave)
-```
-**Agregar un módulo**: crea `js/modules/mimodulo.js` que exporte `{ grupo, nav: [{ ruta, titulo, icono }], rutas: { nombre: async (arg, params) => … } }`
-e impórtalo en `js/main.js`. El menú y las rutas salen de esa declaración. Opcionalmente aporta al Inicio con tres funciones:
-`resumen()` (su mosaico: cifra, visual y pie), `plan()` (sus pendientes para «Mi plan de trabajo») y `buscar(texto)` (grupos de resultados para el buscador global).
-
-Reglas que mantienen el CSP estricto (`script-src 'self'; style-src 'self'`): nada de `onclick` ni `style=""` en el HTML que se genera.
-Navegar: `data-href` en la fila. Anchos dinámicos: `data-w` (lo convierte `movimiento.js` en la variable CSS `--w`). Imprimir: `data-imprimir`.
-Las animaciones solo usan `transform` y `opacity`, ocurren al cambiar de vista (no al filtrar) y se apagan con `prefers-reduced-motion`.
 
 ## Usuarios de prueba
 | Usuario | Clave | Rol |
@@ -54,12 +22,7 @@ Las animaciones solo usan `transform` y `opacity`, ocurren al cambiar de vista (
 Cambia estas claves antes de usarlo en serio.
 
 ## Qué incluye
-- **Inicio**: **banner de marca** (verde Estufas Ecoeficientes `#028080`/`#00a39f` y naranja Metalcof `#fa9f06`, según el manual de identidad, con los logos de Estufas, Ergonatura y Metalcof en una sola tinta blanca, Ergonatura al centro) con los botones **Inicio** y **Mi cuenta**, saludo, **buscador global** (documentos, indicadores, riesgos, controles, evaluaciones, hallazgos y acciones; atajo `/`),
-  un **mosaico por módulo** con su cifra principal y estado, y **Mi plan de trabajo** agrupado por módulo (transiciones, solicitudes, vencimientos, mediciones atrasadas, evaluaciones y acciones).
-- **Mi cuenta** (`#/cuenta`, desde el banner o desde el nombre en el menú lateral): foto y **firma** del usuario (PNG, JPG o WebP; 2 MB la foto y 1 MB la firma),
-  correo, hasta 5 números de contacto, preferencias de notificación, **alerta temprana** (días que se muestran los documentos por vencer en el Inicio),
-  **página de inicio** (la que se abre al entrar) y cambio de clave. La firma solo la ven su dueño, Calidad y administración; la foto la ve toda la empresa.
-  Las imágenes se reconocen por su contenido (no se aceptan SVG), viven en `archivos/usuarios/` y **entran en los respaldos**. Los avisos por correo todavía no se envían: las preferencias quedan guardadas para cuando se configure el correo.
+- **Mi plan de trabajo**: transiciones pendientes, solicitudes por resolver y documentos por vencer.
 - **Mapa de procesos**: Estratégico, Misional y Apoyo, con el conteo de documentos vigentes.
 - **Listado maestro**: filtros por tipo, proceso, clase, origen, estado y fechas. Exporta a CSV.
 - **Ficha del documento**: flujo visual, archivos por versión y trazabilidad completa.
@@ -152,6 +115,49 @@ Pruebas: `node prueba-auditorias.js` (servidor corriendo y base limpia).
   - Orden recomendado: usuarios → documentos → riesgos → controles → mediciones.
 
 Pruebas: `node prueba-admin.js` (servidor corriendo y base limpia).
+
+## Armazón (igual a Almera)
+
+La interfaz sigue la organización de Almera: menú gris arriba con los desplegables Gestión de Calidad, Documentos, Riesgos y Cuadro de Mando; panel izquierdo (ancho ajustable arrastrando el divisor) con logo, usuario y las pestañas Plan Individual, Sistemas, Buscar y Admin; y el contenido al centro. Los listados se paginan de 15 en 15 y sus columnas se ordenan con un clic, y las listas de selección múltiple se muestran como el "Seleccione" de Almera. Todo esto vive en `public/armazon.js` y `public/styles.css`.
+
+El logo de Estufas Ecoeficientes ya está en `public/logo.png`; si se borra, vuelve a mostrarse el nombre de la empresa.
+
+## Mecanismos de integración (`#/mecanismos`)
+
+Igual a Almera (ver `../MECANISMOS-Y-PROCESOS-ALMERA.md`):
+- **Administración** (`#/mecanismos`): filtros por tipo, estado y fechas; pestañas *Mecanismos de Integración* (ID, tipo, nombre, # actas, administradores, otros, activo), *Seguimiento compromisos* (actas, actividades, cerradas, cumplimiento, invitados, asistentes, asistencia) y *Actas* (listado global exportable a XLSX/CSV). Calidad adiciona Comités, Comités Primarios o Reuniones. Vienen cargados los 18 mecanismos que Metalcof tiene en Almera (sin actas).
+- **Configuración**: nombre, tipo, coordinador, periodicidad, objetivo, miembros, funciones; integrantes (Principal/Suplente, privilegio Administrador / Administrador - Miembro / Miembro, "puede adicionar actas"); opciones de las actas (lugar, tipo de reunión, asistentes, control de asistencia, compromisos, arrastrar compromisos abiertos, miembros adicionan compromisos…) y codificación automática con patrón (`%C` consecutivo con padding, `%M` mes, `%Y` año; ej. `COPASST%C`) o manual.
+- **Ficha** (`#/mecanismo/N`): Información General, Actas (por año), Seguimiento (compromisos por estado, fecha y acta) y Estadísticas (sesiones, asistencia, cumplimiento y cierre a tiempo).
+- **Acta** (`#/acta/N`): Planeación (fecha, horas, lugar, tipo de reunión, asistentes con "Asiste", agenda, adjuntos), Desarrollo (contenido y adjuntos, p. ej. la plantilla Word del comité) y Compromisos (responsables, fecha fin, avance, días de adelanto/atraso y avance ponderado; con "arrastrar", los abiertos de actas anteriores). Cerrar, anular y reabrir solo lo hacen los administradores; un acta cerrada o anulada no se edita y la anulada no cuenta en las estadísticas.
+- **Compromiso** (`#/compromiso/N`): Información general y Seguimientos. Cada seguimiento lleva porcentaje (0–100, obligatorio), fecha, descripción y archivo opcional; con 100 % queda Terminada. Se reprograma con nueva fecha y causa (queda el historial). Estados: Planeación (sin seguimientos), Ejecución, Terminada.
+- **Mi Plan de Trabajo**: árbol Mecanismos de Integración → Comités / Comités Primarios / Reuniones → cada mecanismo, y "Mis compromisos" abiertos.
+
+Pruebas: `node prueba-mecanismos.js` (servidor corriendo; crea su propio comité de prueba y al final lo deja inactivo).
+
+**Datos reales de Almera**: `node importar-almera-mecanismos.js ../datos-almera/mecanismos-actas.json` simula y `--aplicar` importa actas, asistentes, compromisos y seguimientos exportados de Almera. Asocia los comités por nombre, pone cada compromiso en su acta de origen, deja a los asistentes como integrantes y crea las personas que no existen (rol consulta, sin clave utilizable hasta que un administrador la asigne). No duplica si se ejecuta otra vez (guarda el ID de Almera). Los archivos adjuntos no se traen: su nombre queda anotado en el desarrollo del acta. Importado el 2026-10-23: 43 actas, 207 compromisos y 248 seguimientos; los 14 comités cuadran con Almera.
+
+## Documentos de procesos → Listado maestro
+
+`node importar-documentos-de-procesos.js --aplicar` convierte en documentos reales (estado Vigente) las 304 referencias que trajo la importación de procesos (tabla `proceso_documentacion`; no vuelve a tocar Almera, usa lo que ya está en la base). La mayoría de esas referencias en Almera solo traen el código (ej. `ES-PRO-FOR-01`), sin el título del documento; esos quedan con el nombre **"(sin confirmar)"** para que alguien los complete a mano desde la ficha del documento. Cuando el código y el título venían juntos (ej. "ES-PRO-FOR-07 Control e Inspección de Obra Blanca") se separan bien. Lo que no tenía forma de código (materias primas del almacén, algunos registros) se guarda con su nombre tal cual y un código propio generado. Importado el 2026-10-26: 294 documentos nuevos. Además se crearon 3 indicadores reales que faltaban (código y nombre confirmados por Almera: ES-GCO-FTE-05, ES-PRO-FTE-01, ES-MAN-FTE-01); como Almera no entregó su meta ni frecuencia reales, quedaron con valores neutros y una nota "Pendiente de configurar" en su propósito, para no confundirlos con datos reales.
+
+## Seguimiento al MOP (`#/seguimiento`)
+
+Reporte igual al de Almera: árbol Estratégico / Misional / Apoyo → proceso → indicador, con "+ Expandir / - Colapsar", mini gráfica del año, medición previa, flecha Mejor/Peor (según el sentido del indicador), último valor en el color del semáforo, meta y semáforo. "Exportar" pide el formato (XLSX o CSV) y descarga desde `/api/mop/exportar?anio=&formato=`; el archivo trae además los valores de cada mes del año (cada periodo en el mes en que cierra). El XLSX se genera sin librerías (`xlsx.js`). El botón de impresora imprime solo el reporte, con todo expandido.
+
+Pruebas: `node prueba-mop.js` (servidor corriendo).
+
+## Ficha de caracterización de procesos (`#/proceso/N`)
+
+Igual a Almera (ver `../MECANISMOS-Y-PROCESOS-ALMERA.md`): encabezado con código, fecha y versión; franja Estratégico/Misional/Apoyo; secciones plegables (Objetivo, Dueño, Alcance, Recursos, Documentos y registros asociados, Requisitos aplicables, y las propias de cada ficha); indicadores con su código real; subprocesos; documentación relacionada; y la tabla de entradas y salidas (Proveedor | Entrada | Actividad con ciclo P/H/V/A | Salida | Cliente), que enlaza al subproceso cuando corresponde. Pestañas Matriz de Riesgos, Medición y Planes de mejora reusan los listados de esos módulos filtrados por proceso. Historial con cada edición como una nueva versión. Solo Calidad edita, y debe describir el cambio.
+
+**Datos reales de Almera**: `node importar-almera-procesos.js ../DATA/procesos-almera.json` simula y `--aplicar` importa los 16 procesos y 13 subprocesos/procedimientos. Empareja por nombre, crea los subprocesos bajo su proceso, enlaza las entradas y salidas al subproceso correspondiente, y actualiza el código de los indicadores de la réplica al código real de Almera (moviendo el indicador de proceso si hace falta). Un proceso que ya se editó en la réplica (versión > 1) no se sobrescribe salvo con `--forzar`. Importado el 2026-10-26.
+
+## Glosario y buscador global
+
+- **Glosario** (`#/glosario`): términos con descripción, fuente (ej. ISO 9000:2015, 3.12.2) y glosario al que pertenecen. Filtro por texto, glosario y letra inicial. Solo Calidad y Administración crean, editan o quitan términos; el resto los consulta. No se repite un término dentro del mismo glosario.
+- **Buscador global** (caja "Buscar…" de la barra superior o `#/buscar?q=`): busca a la vez en documentos (menos los eliminados), registros, glosario, riesgos, controles, indicadores, evaluaciones y acciones de mejora. No distingue tildes ni mayúsculas ("accion" encuentra "Acción"). Cada resultado lleva a su ficha.
+
+Pruebas: `node prueba-glosario.js` (servidor corriendo; crea y borra su propio término, así que funciona también con una base usada).
 
 ## Puesta en producción
 La guía completa está en **[DESPLIEGUE.md](DESPLIEGUE.md)**: Docker + Caddy con HTTPS automático, copias de seguridad diarias,

@@ -7,4 +7,3 @@ antes-de-restaurar-*
 *.log
 prueba-*.js
 .git
-public.respaldo-*

@@ -1,5 +1,6 @@
 // Módulo de indicadores y cuadro de mando (BSC): esquema, datos iniciales y API.
 const { db } = require('./db');
+const { xlsx, csv } = require('./xlsx');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS planes_estrategicos (
@@ -61,6 +62,14 @@ function evaluar(valor, meta, sentido, tolerancia) {
   return { semaforo, cumplimiento: Math.max(0, Math.min(100, cumplimiento)) };
 }
 
+// Mejor / Peor / Igual: el último valor frente a la medición previa, según el sentido del indicador
+function tendencia(ind) {
+  if (ind.ultimo?.valor == null || ind.previo?.valor == null) return null;
+  const d = ind.ultimo.valor - ind.previo.valor;
+  if (!d) return 'Igual';
+  return (ind.sentido === 'Descendente' ? d < 0 : d > 0) ? 'Mejor' : 'Peor';
+}
+
 function sembrar() {
   if (db.prepare('SELECT COUNT(*) n FROM planes_estrategicos').get().n) return;
   const pid = s => db.prepare('SELECT id FROM procesos WHERE sigla = ?').get(s).id;
@@ -89,8 +98,9 @@ function sembrar() {
     ['COM', 'OE2', 'IND-COM-04', 'Satisfacción del cliente', 'Clientes satisfechos / clientes encuestados × 100', 'razon', '%', 'Semestral', 'Ascendente', 90],
     ['SIG', 'OE5', 'IND-SIG-01', 'Administración del riesgo (monitoreo)', 'Controles ejecutados / controles programados × 100', 'razon', '%', 'Trimestral', 'Ascendente', 90],
     ['SIG', 'OE3', 'IND-SIG-02', 'Acciones correctivas', 'Acciones cerradas eficazmente / acciones abiertas × 100', 'razon', '%', 'Trimestral', 'Ascendente', 90],
-    ['SIG', 'OE4', 'IND-SIG-03', 'Uso eficiente del agua', 'Reducción del consumo frente al mismo mes del año anterior', 'directo', '%', 'Mensual', 'Ascendente', 90],
-    ['SIG', 'OE4', 'IND-SIG-04', 'Uso eficiente de energía', 'Reducción del consumo frente al mismo mes del año anterior', 'directo', '%', 'Mensual', 'Ascendente', 90],
+    // Agua y energía según su ficha técnica en Almera (ES-SIG-FTE-03 y -04): agua maximiza, energía minimiza
+    ['SIG', 'OE4', 'IND-SIG-03', 'Uso eficiente del agua', '(Consumo m³ periodo actual − consumo m³ periodo anterior) / consumo m³ periodo anterior × 100', 'directo', '%', 'Mensual', 'Ascendente', 90],
+    ['SIG', 'OE4', 'IND-SIG-04', 'Uso eficiente de energía', '(Consumo kWh periodo actual − consumo kWh periodo anterior) / consumo kWh periodo anterior × 100', 'directo', '%', 'Mensual', 'Descendente', 90],
     ['SIG', 'OE4', 'IND-SIG-05', 'Porcentaje de residuos aprovechables', 'Kg aprovechables / kg generados × 100', 'razon', '%', 'Mensual', 'Ascendente', 60],
     ['CCA', 'OE3', 'IND-CCA-01', 'Conformidad de producto', 'Unidades conformes / unidades inspeccionadas × 100', 'razon', '%', 'Mensual', 'Ascendente', 98],
     ['PRO', 'OE3', 'IND-PRO-01', 'Conformidad de producto - dispositivo', 'Dispositivos conformes / dispositivos producidos × 100', 'razon', '%', 'Mensual', 'Ascendente', 98],
@@ -98,9 +108,11 @@ function sembrar() {
     ['GTH', 'OE6', 'IND-GTH-01', 'Evaluación de desempeño', 'Promedio de la evaluación de desempeño', 'directo', '%', 'Anual', 'Ascendente', 85],
     ['GTH', 'OE6', 'IND-GTH-02', 'Programa de capacitación', 'Capacitaciones ejecutadas / programadas × 100', 'razon', '%', 'Trimestral', 'Ascendente', 90],
   ];
+  // Semáforo de Almera: agua amarillo desde 70 % (90 × (1 − 22,22 %)); energía sin franja amarilla (> 90 % ya es rojo)
+  const TOLERANCIAS = { 'IND-SIG-03': 22.22, 'IND-SIG-04': 0 };
   const ids = {};
   for (const [proc, o, cod, nombre, formula, calculo, unidad, frec, sentido, meta] of defs)
-    ids[cod] = ins.run(pid(proc), obj[o], cod, nombre, null, formula, calculo, unidad, frec, sentido, meta, 10,
+    ids[cod] = ins.run(pid(proc), obj[o], cod, nombre, null, formula, calculo, unidad, frec, sentido, meta, TOLERANCIAS[cod] ?? 10,
       uid(proc === 'PRO' ? 'produccion' : 'calidad')).lastInsertRowid;
 
   // Mediciones 2026 tomadas de Almera (reporte Seguimiento MOP)
@@ -308,6 +320,35 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   }));
 
   // Mediciones atrasadas para "Mi plan de trabajo"
+  // ---------- Reporte "Seguimiento al MOP": exportación XLSX / CSV ----------
+  app.get('/api/mop/exportar', (req, res) => r(() => {
+    const anio = Number(req.query.anio) || anioActual();
+    const formato = req.query.formato === 'csv' ? 'csv' : 'xlsx';
+    const lista = todos(`${SELECT_IND} WHERE i.empresa_id = ? AND i.activo = 1 ORDER BY p.orden, i.codigo`, req.u.empresa_id).map(i => conDatos(i, anio));
+    const SEM = { verde: 'Cumple', amarillo: 'En alerta', rojo: 'No cumple', sin_dato: 'Sin dato' };
+    // Cada periodo se ubica en el mes en que cierra (T1 → Mar, S2 → Dic, Año → Dic)
+    const mesDe = (frecuencia, p) => p * 12 / PERIODOS[frecuencia] - 1;
+    const encabezado = ['Categoría', 'Proceso', 'Código', 'Indicador', 'Frecuencia', 'Unidad', 'Sentido', 'Meta',
+      'Medición previa', 'Periodo previo', 'Último valor', 'Último periodo', 'Tendencia', 'Semáforo', 'Cumplimiento %', ...MESES.map(m => `${m} ${anio}`)];
+    const filas = lista.map(i => {
+      const meses = Array(12).fill(null);
+      i.serie.forEach(s => { if (s.valor != null) meses[mesDe(i.frecuencia, s.periodo)] = s.valor; });
+      return [i.categoria, i.proceso, i.codigo, i.nombre, i.frecuencia, i.unidad, i.sentido, i.meta,
+        i.previo?.valor ?? null, i.previo ? `${i.previo.etiqueta} ${i.previo.anio}` : null,
+        i.ultimo?.valor ?? null, i.ultimo ? `${i.ultimo.etiqueta} ${i.ultimo.anio}` : null,
+        tendencia(i), SEM[i.semaforo], i.cumplimiento == null ? null : Math.round(i.cumplimiento * 10) / 10, ...meses];
+    });
+    const nombre = `seguimiento-mop-${anio}.${formato}`;
+    res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
+    if (formato === 'csv') {
+      res.type('text/csv; charset=utf-8');
+      res.send(csv([encabezado, ...filas.map(f => f.map(v => typeof v === 'number' ? String(v).replace('.', ',') : v))]));
+    } else {
+      res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(xlsx('Seguimiento MOP', [encabezado, ...filas], [14, 30, 12, 42, 11, 8, 12, 8, 10, 11, 10, 11, 10, 11, 11, ...Array(12).fill(9)]));
+    }
+  })(req, res));
+
   app.get('/api/indicadores-pendientes', r(req => {
     const anio = anioActual();
     return todos(`${SELECT_IND} WHERE i.empresa_id = ? AND i.activo = 1`, req.u.empresa_id)

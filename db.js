@@ -67,17 +67,9 @@ CREATE TABLE IF NOT EXISTS registros (
   tiempo_retencion TEXT, disposicion_final TEXT, recuperacion TEXT);
 `);
 
-// Columnas añadidas después de la primera versión. Las de «Mi cuenta»: correo, foto y firma (solo el nombre del archivo, que vive en
-// archivos/usuarios/; *_v cambia con cada subida para que el navegador no use una copia vieja) y preferencias del usuario.
-for (const [col, def] of [['activo', 'INTEGER NOT NULL DEFAULT 1'], ['debe_cambiar', 'INTEGER NOT NULL DEFAULT 0'],
-  ['correo', 'TEXT'], ['foto', 'TEXT'], ['foto_v', 'INTEGER NOT NULL DEFAULT 0'], ['firma', 'TEXT'], ['firma_v', 'INTEGER NOT NULL DEFAULT 0'],
-  ['pref_notif_atraso', 'INTEGER NOT NULL DEFAULT 1'], ['pref_dias_atraso', 'INTEGER NOT NULL DEFAULT 1'],
-  ['pref_notif_proximas', 'INTEGER NOT NULL DEFAULT 1'], ['pref_dias_proximas', 'INTEGER NOT NULL DEFAULT 1'],
-  ['pref_alerta_dias', 'INTEGER NOT NULL DEFAULT 30'], ['pref_inicio', "TEXT NOT NULL DEFAULT 'inicio'"]])
+// Columnas añadidas después de la primera versión
+for (const [col, def] of [['activo', 'INTEGER NOT NULL DEFAULT 1'], ['debe_cambiar', 'INTEGER NOT NULL DEFAULT 0']])
   if (!db.prepare('PRAGMA table_info(usuarios)').all().some(c => c.name === col)) db.exec(`ALTER TABLE usuarios ADD COLUMN ${col} ${def}`);
-db.exec(`CREATE TABLE IF NOT EXISTS usuario_contactos (
-  id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-  tipo TEXT NOT NULL CHECK (tipo IN ('Celular','Teléfono','WhatsApp')), numero TEXT NOT NULL)`);
 
 function hash(clave) {
   const sal = crypto.randomBytes(16).toString('hex');

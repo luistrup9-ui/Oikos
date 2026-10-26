@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sistema de Gestión Integral</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <form id="formLogin" class="tarjeta">
+      <h1>SGI</h1>
+      <p class="sub">Sistema de Gestión Integral</p>
+      <label>Usuario <input name="usuario" autocomplete="username" required></label>
+      <label>Clave <input name="clave" type="password" autocomplete="current-password" required></label>
+      <button class="btn primario">Ingresar</button>
+      <p class="error" id="errLogin"></p>
+    </form>
+  </div>
+
+  <!-- Armazón como Almera: menú arriba, panel lateral con pestañas y contenido al centro -->
+  <div id="app" class="armazon" hidden>
+    <header class="norte">
+      <nav id="menu">
+        <ul class="sm">
+          <li><a href="#" class="tiene-sub"><i class="ic ic-engrane"></i>Gestión de Calidad</a>
+            <ul>
+              <li><a href="#/mapa">Mapa de procesos</a></li>
+              <li><a href="#" class="tiene-sub">Listados maestros</a>
+                <ul>
+                  <li><a href="#/documentos">Listado maestro de documentos</a></li>
+                  <li><a href="#/registros">Listado maestro de registros</a></li>
+                </ul></li>
+              <li><a href="#/glosario">Glosario de términos</a></li>
+              <li><a href="#" class="tiene-sub">Evaluación</a>
+                <ul>
+                  <li><a href="#/auditorias">Evaluaciones</a></li>
+                  <li><a href="#/acciones">Acciones de mejora</a></li>
+                </ul></li>
+              <li><a href="#" class="tiene-sub">Reportes</a>
+                <ul>
+                  <li><a href="#/seguimiento">Seguimiento MOP</a></li>
+                </ul></li>
+            </ul></li>
+          <li><a href="#" class="tiene-sub"><i class="ic ic-documento"></i>Documentos</a>
+            <ul>
+              <li><a href="#/solicitudes">Mis solicitudes</a></li>
+              <li><a href="#/inicio">Mis pendientes</a></li>
+              <li data-no="consulta"><a href="#" class="tiene-sub">Elaborar</a>
+                <ul>
+                  <li><a href="#" data-accion="elaborar">Solicitud de documento</a></li>
+                </ul></li>
+              <li><a href="#/buscar"><i class="ic ic-lupa"></i>Buscar</a></li>
+              <li><a href="#/estadisticas">Estadísticas</a></li>
+            </ul></li>
+          <li><a href="#" class="tiene-sub"><i class="ic ic-alerta"></i>Riesgos</a>
+            <ul>
+              <li><a href="#/riesgos"><i class="ic ic-calor"></i>Matriz de riesgos</a></li>
+              <li><a href="#/controles"><i class="ic ic-escudo"></i>Controles</a></li>
+            </ul></li>
+          <li><a href="#" class="tiene-sub"><i class="ic ic-grafica"></i>Cuadro de Mando</a>
+            <ul>
+              <li><a href="#/tablero">Seguimiento</a></li>
+              <li><a href="#/indicadores">Indicadores</a></li>
+            </ul></li>
+          <li><a href="#" id="salir"><i class="ic ic-salir"></i>Salir <span class="gris" id="usuarioCorto"></span></a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <aside class="oeste" id="oeste">
+      <div class="logo" id="logo"><img src="logo.png" alt="" onerror="this.remove()"><b id="logoTexto"></b></div>
+      <div class="quien"><i class="ic ic-usuario"></i><span id="usuario"></span><br><span class="gris" id="empresa"></span></div>
+      <div class="pestanas" role="tablist">
+        <button class="activo" data-tab="plan">Plan Individual</button>
+        <button data-tab="sistemas">Sistemas</button>
+        <button data-tab="buscar">Buscar</button>
+        <button data-tab="admin" data-solo="admin,lider_calidad">Admin</button>
+      </div>
+      <div class="panel-tab" data-panel="plan">
+        <div class="botonera">
+          <button class="icono" id="actualizarPlan" title="Actualizar"><i class="ic ic-recargar"></i></button>
+          <a class="boton" href="#/bienvenida" title="Ir a la página de inicio"><i class="ic ic-casa"></i>Inicio</a>
+          <a class="boton" href="#/inicio" title="Ir a mi página personal"><i class="ic ic-usuario"></i>Personal</a>
+          <a class="boton" href="#" id="cuenta" title="Cambiar mi clave"><i class="ic ic-llave"></i>Cuenta</a>
+        </div>
+        <ul class="arbol-lat" id="arbolPlan"></ul>
+      </div>
+      <div class="panel-tab" data-panel="sistemas" hidden><ul class="arbol-lat" id="arbolSistemas"></ul></div>
+      <div class="panel-tab" data-panel="buscar" hidden>
+        <form id="buscarGlobal" class="buscar-lat"><input name="q" type="search" placeholder="Buscar…" aria-label="Buscar en todo el sistema">
+          <button class="btn">Buscar</button></form>
+        <div id="resultadosBuscador"></div>
+      </div>
+      <div class="panel-tab" data-panel="admin" hidden><ul class="arbol-lat" id="arbolAdmin"></ul></div>
+    </aside>
+    <div class="divisor" id="divisor" title="Arrastra para cambiar el ancho"></div>
+
+    <main class="centro">
+      <div id="vista"></div>
+      <footer class="pie"><span id="pieEmpresa"></span><br><span class="rojo">SGI</span> - Sistema de Gestión Integral</footer>
+    </main>
+  </div>
+
+  <dialog id="modal"><form method="dialog" id="modalForm"></form></dialog>
+  <div id="aviso" class="aviso" hidden></div>
+  <script src="app.js"></script>
+  <script src="indicadores.js"></script>
+  <script src="riesgos.js"></script>
+  <script src="auditorias.js"></script>
+  <script src="admin.js"></script>
+  <script src="glosario.js"></script>
+  <script src="mecanismos.js"></script>
+  <script src="procesos.js"></script>
+  <script src="armazon.js"></script>
+</body>
+</html>
