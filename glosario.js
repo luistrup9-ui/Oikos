@@ -30,12 +30,23 @@ const FUENTES = [
       FROM acciones a WHERE a.empresa_id = ? AND (a.codigo LIKE ? OR a.correccion LIKE ? OR a.causa_raiz LIKE ?)`, n: 3 },
 ];
 
+// Restricción de cada tipo para quien lidera un proceso (ids = sus procesos). Los documentos vigentes, registros y términos son de todos.
+const marcas = ids => ids.map(() => '?').join(',');
+const RESTRICCION = {
+  Documento: (ids, u) => ({ sql: ` AND (d.estado = 'VIGENTE' OR d.responsable_id = ?${ids.length ? ` OR d.proceso_id IN (${marcas(ids)})` : ''})`, params: [u.id, ...ids] }),
+  Riesgo: ids => ({ sql: ` AND r.proceso_id IN (${marcas(ids.length ? ids : [-1])})`, params: ids.length ? ids : [-1] }),
+  Control: ids => ({ sql: ` AND r.proceso_id IN (${marcas(ids.length ? ids : [-1])})`, params: ids.length ? ids : [-1] }),
+  Indicador: ids => ({ sql: ` AND i.proceso_id IN (${marcas(ids.length ? ids : [-1])})`, params: ids.length ? ids : [-1] }),
+  'Evaluación': (ids, u) => ({ sql: ` AND (e.auditor_id = ?${ids.length ? ` OR e.id IN (SELECT evaluacion_id FROM evaluacion_procesos WHERE proceso_id IN (${marcas(ids)}))` : ''})`, params: [u.id, ...ids] }),
+  'Acción de mejora': (ids, u) => ({ sql: ` AND (a.responsable_id = ?${ids.length ? ` OR a.hallazgo_id IN (SELECT id FROM hallazgos WHERE proceso_id IN (${marcas(ids)}))` : ''})`, params: [u.id, ...ids] }),
+};
+
 // Se busca sin distinguir tildes ni mayúsculas: "accion" encuentra "Acción"
 const sinTildes = v => v == null ? null : String(v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 db.function('sin_tildes', { deterministic: true }, sinTildes);
 for (const f of FUENTES) f.sql = f.sql.replace(/([\w.]+) LIKE \?/g, 'sin_tildes($1) LIKE ?');
 
-module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, ahora }) {
+module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, esCalidad, ahora }) {
   // ---------- Glosario ----------
   app.get('/api/glosario', r(req => {
     const w = ['empresa_id = ?'], p = [req.u.empresa_id];
@@ -75,10 +86,11 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, aho
     if (texto.length < 2) falla(400, 'Escribe al menos 2 caracteres');
     const tipos = [].concat(req.query.tipo || []).filter(Boolean);
     const like = `%${sinTildes(texto)}%`;
-    const resultados = [];
+    const resultados = [], ids = alcance.propios(req.u);
     for (const f of FUENTES) {
       if (tipos.length && !tipos.includes(f.tipo)) continue;
-      for (const fila of todos(f.sql + ' LIMIT 50', req.u.empresa_id, ...Array(f.n).fill(like)))
+      const rs = ids !== null && RESTRICCION[f.tipo] ? RESTRICCION[f.tipo](ids, req.u) : { sql: '', params: [] };
+      for (const fila of todos(f.sql + rs.sql + ' LIMIT 50', req.u.empresa_id, ...Array(f.n).fill(like), ...rs.params))
         resultados.push({ ...fila, tipo: f.tipo, ruta: f.ruta });
     }
     return { texto, tipos: FUENTES.map(f => f.tipo), resultados };

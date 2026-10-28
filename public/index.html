@@ -3,13 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sistema de Gestión Integral</title>
+  <title>OIKOS · Sistema de Gestión Integral</title>
+  <meta name="theme-color" content="#303034">
+  <link rel="icon" type="image/svg+xml" href="oikos/oikos-isotipo.svg">
+  <link rel="preload" href="fuentes/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fuentes/sora-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="login" class="login" hidden>
     <form id="formLogin" class="tarjeta">
-      <h1>SGI</h1>
+      <h1 class="solo-lector">OIKOS</h1>
+      <img class="login-logo" src="oikos/oikos-logo-claro.svg" alt="">
       <p class="sub">Sistema de Gestión Integral</p>
       <label>Usuario <input name="usuario" autocomplete="username" required></label>
       <label>Clave <input name="clave" type="password" autocomplete="current-password" required></label>
@@ -21,6 +26,7 @@
   <!-- Armazón como Almera: menú arriba, panel lateral con pestañas y contenido al centro -->
   <div id="app" class="armazon" hidden>
     <header class="norte">
+      <a class="marca" href="#/bienvenida" title="Inicio"><img src="oikos/oikos-isotipo-nube.svg" alt="OIKOS"></a>
       <nav id="menu">
         <ul class="sm">
           <li><a href="#" class="tiene-sub"><i class="ic ic-engrane"></i>Gestión de Calidad</a>
@@ -69,7 +75,7 @@
     </header>
 
     <aside class="oeste" id="oeste">
-      <div class="logo" id="logo"><img src="logo.png" alt="" onerror="this.remove()"><b id="logoTexto"></b></div>
+      <div class="logo" id="logo"><img src="oikos/oikos-logo-claro.svg" alt="OIKOS" onerror="this.remove()"><b id="logoTexto"></b></div>
       <div class="quien"><i class="ic ic-usuario"></i><span id="usuario"></span><br><span class="gris" id="empresa"></span></div>
       <div class="pestanas" role="tablist">
         <button class="activo" data-tab="plan">Plan Individual</button>
@@ -81,8 +87,7 @@
         <div class="botonera">
           <button class="icono" id="actualizarPlan" title="Actualizar"><i class="ic ic-recargar"></i></button>
           <a class="boton" href="#/bienvenida" title="Ir a la página de inicio"><i class="ic ic-casa"></i>Inicio</a>
-          <a class="boton" href="#/inicio" title="Ir a mi página personal"><i class="ic ic-usuario"></i>Personal</a>
-          <a class="boton" href="#" id="cuenta" title="Cambiar mi clave"><i class="ic ic-llave"></i>Cuenta</a>
+          <a class="boton" href="#/inicio" title="Mi perfil, mi calendario de actividades y el cambio de mi clave"><i class="ic ic-usuario"></i>Personal</a>
         </div>
         <ul class="arbol-lat" id="arbolPlan"></ul>
       </div>
@@ -98,7 +103,7 @@
 
     <main class="centro">
       <div id="vista"></div>
-      <footer class="pie"><span id="pieEmpresa"></span><br><span class="rojo">SGI</span> - Sistema de Gestión Integral</footer>
+      <footer class="pie"><span id="pieEmpresa"></span><br><span class="marca-pie">OIKOS</span> - Sistema de Gestión Integral</footer>
     </main>
   </div>
 
@@ -112,6 +117,8 @@
   <script src="glosario.js"></script>
   <script src="mecanismos.js"></script>
   <script src="procesos.js"></script>
+  <script src="mapa.js"></script>
+  <script src="personal.js"></script>
   <script src="armazon.js"></script>
 </body>
 </html>

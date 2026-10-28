@@ -125,11 +125,10 @@ rutas.bienvenida = async function () {
   const tile = (titulo, enlace, texto, dibujo) => `<a class="tile" href="${enlace}"><span class="tile-titulo">${titulo}</span>
     <span class="tile-cuerpo">${dibujo}</span><span class="tile-pie">${texto}</span></a>`;
   vista.innerHTML = `<div class="tiles">
-    ${tile('La empresa', '#/mapa', 'Mapa de procesos', `<b class="tile-empresa">${esc(yo.empresa || 'SGI')}</b>`)}
-    ${tile('Mapa de procesos', '#/mapa', 'Mapa de procesos', `<span class="mini-mapa">${['Estratégico', 'Misional', 'Apoyo'].map(c =>
-      `<i>${cat.procesos.filter(p => p.categoria === c && !p.padre_id).map(() => '<s></s>').join('')}</i>`).join('')}</span>`)}
-    ${tile('Página individual', '#/inicio', 'Página individual', '<span class="silueta"></span>')}
-    ${tile('Cuadro de Mando', '#/tablero', 'Cuadro de Mando', '<span class="barras-tile"><i></i><i></i><i></i><i></i><i></i></span>')}
+    ${tile('La empresa', '#/mapa', 'Mapa de procesos', `<img class="tile-logo" src="oikos/oikos-isotipo.svg" alt=""><b class="tile-empresa">${esc(yo.empresa || 'SGI')}</b>`)}
+    ${tile('Mapa de procesos', '#/mapa', 'Mapa de procesos', '<span class="hex hex-mapa"></span>')}
+    ${tile('Página individual', '#/inicio', 'Página individual', '<span class="hex hex-usuario"></span>')}
+    ${tile('Cuadro de Mando', '#/tablero', 'Cuadro de Mando', '<span class="hex hex-mando"></span>')}
   </div>`;
 };
 

@@ -4,8 +4,9 @@ const raices = () => cat.procesos.filter(p => !p.padre_id);
 const hijosDe = id => cat.procesos.filter(p => p.padre_id === id);
 
 rutas.proceso = async function (id) {
-  const t = parametro('t') || 'general';
+  let t = parametro('t') || 'general';
   const p = await api('/procesos/' + id);
+  if (p.propio === false && !['general', 'historial'].includes(t)) t = 'general'; // de un proceso ajeno solo se ve la ficha y su historial
   const base = `#/proceso/${id}`;
   let cuerpo = '';
   if (t === 'general') {
@@ -62,7 +63,8 @@ rutas.proceso = async function (id) {
     <div class="controles"><button class="btn" onclick="location.hash='#/mapa'">Mapa de procesos</button>
       ${p.puede_editar ? '<button class="btn" id="editarProc">Editar</button>' : ''}
       <span class="espacio"></span><button class="btn icono-solo" title="Imprimir / PDF" onclick="window.print()"><i class="ic ic-imprimir"></i></button></div>
-    ${pestanasPagina([['general', 'General'], ['riesgos', 'Matriz de Riesgos'], ['medicion', 'Medición'], ['mejora', 'Planes de mejora'], ['historial', 'Historial']], t, base)}
+    ${pestanasPagina(p.propio !== false ? [['general', 'General'], ['riesgos', 'Matriz de Riesgos'], ['medicion', 'Medición'], ['mejora', 'Planes de mejora'], ['historial', 'Historial']]
+      : [['general', 'General'], ['historial', 'Historial']], t, base)}
     <div class="tarjeta ficha-proceso">${cuerpo}</div>`;
   vista.querySelectorAll('.agrupador').forEach(h => h.onclick = () => h.parentElement.classList.toggle('cerrada'));
   vista.querySelectorAll('[data-ver]').forEach(b => b.onclick = intentar(async () => {
@@ -86,6 +88,7 @@ function documentacion(p) {
 
 // Editor de la ficha: datos, secciones (título + texto) y entradas/salidas
 const editarProceso = intentar(async p => {
+  const bloqueo = esCalidad() ? '' : 'readonly'; // quien lidera el proceso edita el contenido, no su identidad
   const filaSec = (s = {}) => `<div class="fila-sec"><input name="sec_titulo" placeholder="Título (ej. Objetivo)" value="${esc(s.titulo)}">
     <textarea name="sec_texto" rows="3">${esc(s.texto)}</textarea><button type="button" class="btn chico peligro quitar">Quitar</button></div>`;
   const filaEs = (e = {}) => `<div class="fila-es"><input name="es_actividad" placeholder="Actividad" value="${esc(e.actividad)}">
@@ -94,10 +97,11 @@ const editarProceso = intentar(async p => {
     <textarea name="es_salidas" rows="2" placeholder="Salida | Cliente (una por línea)">${esc((e.salidas || []).map(x => `${x.salida || ''} | ${x.cliente || ''}`).join('\n'))}</textarea>
     <input type="hidden" name="es_sub" value="${esc(e.subproceso_id || '')}"><button type="button" class="btn chico peligro quitar">Quitar</button></div>`;
   const dlgPromesa = modal(`Editar ${p.tipo.toLowerCase()}: ${p.nombre}`, `<div class="form">
-    <label class="ancho">Nombre<input name="nombre" required value="${esc(p.nombre)}"></label>
-    <label>Código<input name="codigo" value="${esc(p.codigo)}"></label>
+    <label class="ancho">Nombre<input name="nombre" required value="${esc(p.nombre)}" ${bloqueo}></label>
+    <label>Código<input name="codigo" value="${esc(p.codigo)}" ${bloqueo}></label>
     <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
-    <label>Tipo<select name="tipo">${['Proceso', 'Subproceso', 'Procedimiento'].map(x => `<option ${x === p.tipo ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+    <label>Tipo<select name="tipo" ${bloqueo ? 'disabled' : ''}>${['Proceso', 'Subproceso', 'Procedimiento'].map(x => `<option ${x === p.tipo ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+    ${bloqueo ? '<p class="sub" style="margin:0">El nombre, el código y el tipo los define Calidad. Aquí editas el contenido de la ficha.</p>' : ''}
     <h3>Secciones</h3><div id="secciones">${p.secciones.map(filaSec).join('')}</div><button type="button" class="btn chico" id="masSec">Agregar sección</button>
     <h3>Entradas y salidas</h3><div id="filasEs">${p.entradas_salidas.map(filaEs).join('')}</div><button type="button" class="btn chico" id="masEs">Agregar actividad</button>
     <label class="ancho">Modificación (queda en el historial)<input name="comentario" required placeholder="Qué cambió y por qué"></label>`);

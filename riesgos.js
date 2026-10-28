@@ -69,7 +69,7 @@ function sembrar() {
 }
 sembrar();
 
-module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, ahora }) {
+module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, esCalidad, ahora }) {
   const SELECT_R = `SELECT r.*, p.nombre proceso, p.sigla proceso_sigla, p.orden proceso_orden, u.nombre responsable FROM riesgos r
     JOIN procesos p ON p.id = r.proceso_id LEFT JOIN usuarios u ON u.id = r.responsable_id`;
   const valorar = rg => {
@@ -78,7 +78,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, aho
       total_controles: controles.length, ...residual(rg, controles) };
   };
   // Calidad administra todo; el líder de proceso, los riesgos de su proceso
-  const puedeEditar = (rg, u) => esCalidad(u) || (u.rol === 'lider_proceso' && Number(rg.proceso_id) === u.proceso_id);
+  const puedeEditar = (rg, u) => esCalidad(u) || alcance.lidera(rg.proceso_id, u);
   const lista = v => [].concat(v || []).filter(Boolean);
 
   app.get('/api/riesgos/catalogos', r(() => ({ tipos: TIPOS, probabilidad: PROBABILIDAD, impacto: IMPACTO,
@@ -90,7 +90,8 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, aho
     if (procs.length) { w.push(`r.proceso_id IN (${procs.map(() => '?').join(',')})`); p.push(...procs); }
     if (tipos.length) { w.push(`r.tipo IN (${tipos.map(() => '?').join(',')})`); p.push(...tipos); }
     if (q.texto) { w.push('(r.nombre LIKE ? OR r.codigo LIKE ?)'); p.push(`%${q.texto}%`, `%${q.texto}%`); }
-    let out = todos(`${SELECT_R} WHERE ${w.join(' AND ')} ORDER BY p.orden, r.codigo`, ...p).map(valorar);
+    const fr = alcance.filtro(req.u, 'r.proceso_id'); // el líder de proceso solo ve los riesgos de su proceso
+    let out = todos(`${SELECT_R} WHERE ${w.join(' AND ')}${fr.sql} ORDER BY p.orden, r.codigo`, ...p, ...fr.params).map(valorar);
     const zonas = lista(q.zona);
     if (zonas.length) out = out.filter(x => zonas.includes(q.matriz === 'residual' ? x.zona_residual : x.zona));
     return out.map(x => ({ ...x, puede_editar: puedeEditar(x, req.u) }));
@@ -98,7 +99,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, aho
 
   app.get('/api/riesgos/:id', r(req => {
     const rg = uno(`${SELECT_R} WHERE r.id = ? AND r.empresa_id = ?`, req.params.id, req.u.empresa_id);
-    if (!rg) falla(404, 'Riesgo no encontrado');
+    if (!rg || !alcance.ve(rg.proceso_id, req.u)) falla(404, 'Riesgo no encontrado');
     const mes = new Date().toISOString().slice(0, 7);
     return {
       ...valorar(rg), puede_editar: puedeEditar(rg, req.u),
@@ -152,11 +153,12 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, esCalidad, aho
     if (clases.length) { w.push(`c.clasificacion IN (${clases.map(() => '?').join(',')})`); p.push(...clases); }
     if (q.texto) { w.push('(c.descripcion LIKE ? OR c.codigo LIKE ? OR r.nombre LIKE ?)'); p.push(...Array(3).fill(`%${q.texto}%`)); }
     if (q.responsable) { w.push(`c.${q.rol === 'revision' ? 'responsable_revision_id' : 'responsable_gestion_id'} = ?`); p.push(q.responsable); }
+    const fc = alcance.filtro(req.u, 'r.proceso_id');
     return todos(`SELECT c.*, r.codigo riesgo_codigo, r.nombre riesgo, r.id riesgo_id, pr.nombre proceso,
         g.nombre responsable_gestion, v.nombre responsable_revision FROM controles c
       JOIN riesgos r ON r.id = c.riesgo_id JOIN procesos pr ON pr.id = r.proceso_id
       LEFT JOIN usuarios g ON g.id = c.responsable_gestion_id LEFT JOIN usuarios v ON v.id = c.responsable_revision_id
-      WHERE ${w.join(' AND ')} ORDER BY pr.orden, r.codigo, c.codigo`, ...p);
+      WHERE ${w.join(' AND ')}${fc.sql} ORDER BY pr.orden, r.codigo, c.codigo`, ...p, ...fc.params);
   }));
 
   const CAMPOS_C = ['descripcion', 'clasificacion', 'mitiga_probabilidad', 'mitiga_impacto', 'efectividad', 'frecuencia', 'documentado',

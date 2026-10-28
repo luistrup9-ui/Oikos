@@ -67,6 +67,7 @@ app.use('/api', (req, res, next) => {
   req.u = u; next();
 });
 const esCalidad = u => u.rol === 'admin' || u.rol === 'lider_calidad';
+const alcance = require('./alcance')({ todos });
 
 const intentos = new Map(); // usuario -> { n, hasta }: bloqueo tras 5 fallos
 app.post('/api/login', r((req, res) => {
@@ -106,7 +107,7 @@ function transicionesDisponibles(doc, u) {
     if (t.desde ? t.desde !== doc.estado : doc.estado === 'ELIMINADO') return false;
     if (!t.roles.split(',').includes(u.rol)) return false;
     // El líder de proceso solo mueve documentos de su proceso o de los que es responsable
-    if (u.rol === 'lider_proceso') return doc.responsable_id === u.id || doc.proceso_id === u.proceso_id;
+    if (u.rol === 'lider_proceso') return doc.responsable_id === u.id || alcance.lidera(doc.proceso_id, u);
     return true;
   });
 }
@@ -164,6 +165,8 @@ app.get('/api/documentos', r(req => {
   if (!lista(q.estado).length) w.push("d.estado != 'ELIMINADO'");
   // Usuarios de consulta solo ven documentos vigentes
   if (req.u.rol === 'consulta') w.push("d.estado = 'VIGENTE'");
+  // El líder de proceso lee los vigentes de todos los procesos, pero el trabajo en curso solo ve el de su proceso
+  if (req.u.rol === 'lider_proceso') { const ids = alcance.propios(req.u); w.push(`(d.estado = 'VIGENTE' OR d.responsable_id = ?${ids.length ? ` OR d.proceso_id IN (${ids.map(() => '?').join(',')})` : ''})`); p.push(req.u.id, ...ids); }
   if (q.texto) { w.push('(d.codigo LIKE ? OR d.nombre LIKE ? OR d.descripcion LIKE ?)'); p.push(...Array(3).fill(`%${q.texto}%`)); }
   const campoFecha = { creado: 'd.creado', documento: 'd.fecha_documento', vencimiento: 'd.fecha_vencimiento' }[q.campo_fecha] || 'd.modificado';
   if (q.op === '>' && q.fecha1) { w.push(`${campoFecha} >= ?`); p.push(q.fecha1); }
@@ -174,11 +177,12 @@ app.get('/api/documentos', r(req => {
 
 function cargarDoc(req) {
   const d = uno(`${SELECT_DOC} WHERE d.id = ? AND d.empresa_id = ?`, req.params.id, req.u.empresa_id);
-  if (!d || (req.u.rol === 'consulta' && d.estado !== 'VIGENTE')) falla(404, 'Documento no encontrado');
+  if (!d || (req.u.rol === 'consulta' && d.estado !== 'VIGENTE') ||
+      (req.u.rol === 'lider_proceso' && d.estado !== 'VIGENTE' && d.responsable_id !== req.u.id && !alcance.lidera(d.proceso_id, req.u))) falla(404, 'Documento no encontrado');
   return d;
 }
 const puedeEditar = (d, u) => d.estado === 'ELABORACION' &&
-  (esCalidad(u) || (u.rol === 'lider_proceso' && (d.responsable_id === u.id || d.proceso_id === u.proceso_id)));
+  (esCalidad(u) || (u.rol === 'lider_proceso' && (d.responsable_id === u.id || alcance.lidera(d.proceso_id, u))));
 
 app.get('/api/documentos/:id', r(req => {
   const d = cargarDoc(req);
@@ -305,8 +309,9 @@ app.get('/api/pendientes', r(req => {
     .map(d => ({ ...d, transiciones: transicionesDisponibles(d, req.u).filter(t => t.id !== 'eliminar').map(t => t.nombre) }))
     .filter(d => d.transiciones.length);
   const solicitudes = esCalidad(req.u) ? uno("SELECT COUNT(*) n FROM solicitudes WHERE empresa_id = ? AND estado = 'Pendiente'", req.u.empresa_id).n : 0;
+  const fv = alcance.filtro(req.u, 'd.proceso_id');
   const porVencer = todos(`${SELECT_DOC} WHERE d.empresa_id = ? AND d.estado = 'VIGENTE' AND d.fecha_vencimiento IS NOT NULL
-    AND d.fecha_vencimiento <= date('now', '+30 days') ORDER BY d.fecha_vencimiento`, req.u.empresa_id);
+    AND d.fecha_vencimiento <= date('now', '+30 days')${fv.sql} ORDER BY d.fecha_vencimiento`, req.u.empresa_id, ...fv.params);
   return { documentos: docs, solicitudes, por_vencer: porVencer };
 }));
 
@@ -318,9 +323,10 @@ app.get('/api/estadisticas', r(req => {
     const l = lista(v); if (l.length) { w.push(`${col} IN (${l.map(() => '?').join(',')})`); p.push(...l); }
   }
   if (q.texto) { w.push('(d.codigo LIKE ? OR d.nombre LIKE ?)'); p.push(`%${q.texto}%`, `%${q.texto}%`); }
+  const fe = alcance.filtro(req.u, 'd.proceso_id');
   return {
-    por_estado: todos(`SELECT e.nombre, e.id, COUNT(d.id) n FROM estados e LEFT JOIN documentos d ON d.estado = e.id AND d.empresa_id = ?
-      GROUP BY e.id ORDER BY e.orden`, req.u.empresa_id),
+    por_estado: todos(`SELECT e.nombre, e.id, COUNT(d.id) n FROM estados e LEFT JOIN documentos d ON d.estado = e.id AND d.empresa_id = ?${fe.sql}
+      GROUP BY e.id ORDER BY e.orden`, req.u.empresa_id, ...fe.params),
     por_proceso: todos(`SELECT p.nombre, p.categoria, COUNT(d.id) n FROM procesos p LEFT JOIN documentos d ON d.proceso_id = p.id
       AND d.estado = 'VIGENTE' WHERE p.empresa_id = ? GROUP BY p.id ORDER BY p.orden`, req.u.empresa_id),
     transiciones: todos(`SELECT b.*, d.codigo, d.nombre, t.nombre tipo, u.nombre usuario, tr.nombre transicion,
@@ -328,7 +334,7 @@ app.get('/api/estadisticas', r(req => {
       FROM bitacora b JOIN documentos d ON d.id = b.documento_id JOIN tipos_documento t ON t.id = d.tipo_id
       LEFT JOIN usuarios u ON u.id = b.usuario_id LEFT JOIN transiciones tr ON tr.id = b.transicion_id
       LEFT JOIN estados ei ON ei.id = b.estado_inicial LEFT JOIN estados ef ON ef.id = b.estado_final
-      WHERE ${w.join(' AND ')} ORDER BY b.id DESC LIMIT 500`, ...p),
+      WHERE ${w.join(' AND ')}${fe.sql} ORDER BY b.id DESC LIMIT 500`, ...p, ...fe.params),
   };
 }));
 
@@ -361,13 +367,14 @@ app.delete('/api/registros/:id', r(req => {
   return { ok: true };
 }));
 
-require('./indicadores')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
-require('./riesgos')(app, { uno, todos, ejecutar, r, falla, esCalidad, ahora });
-require('./auditorias')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
-require('./admin')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
-require('./glosario')(app, { uno, todos, ejecutar, r, falla, esCalidad, ahora });
-require('./procesos')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
-require('./mecanismos')(app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora, subida, DIR_ARCHIVOS });
+require('./indicadores')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
+require('./riesgos')(app, { alcance, uno, todos, ejecutar, r, falla, esCalidad, ahora });
+require('./auditorias')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
+require('./admin')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
+require('./glosario')(app, { alcance, uno, todos, ejecutar, r, falla, esCalidad, ahora });
+require('./procesos')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
+require('./mecanismos')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora, subida, DIR_ARCHIVOS });
+require('./calendario')(app, { alcance, todos, falla, r });
 
 const PUERTO = process.env.PORT || 3100;
 const servidor = app.listen(PUERTO, process.env.HOST, () => console.log(`SGI listo en http://localhost:${PUERTO}`));

@@ -56,7 +56,7 @@ const PREGUNTAS_ISO = [
   ['10.2', '¿Las no conformidades tienen análisis de causa y acciones correctivas eficaces?'],
 ];
 
-module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
+module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
   const hoy = () => ahora().slice(0, 10);
   const lista = v => [].concat(v || []).filter(Boolean);
   const enLista = (w, p, col, v) => { const l = lista(v); if (l.length) { w.push(`${col} IN (${l.map(() => '?').join(',')})`); p.push(...l); } };
@@ -79,26 +79,34 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     const procs = lista(q.proceso);
     if (procs.length) { w.push(`e.id IN (SELECT evaluacion_id FROM evaluacion_procesos WHERE proceso_id IN (${procs.map(() => '?').join(',')}))`); p.push(...procs); }
     if (q.texto) { w.push('(e.nombre LIKE ? OR e.codigo LIKE ?)'); p.push(`%${q.texto}%`, `%${q.texto}%`); }
+    // El líder de proceso ve las evaluaciones donde es auditor o donde participa su proceso
+    const ids = alcance.propios(req.u);
+    if (ids !== null) { w.push(`(e.auditor_id = ?${ids.length ? ` OR e.id IN (SELECT evaluacion_id FROM evaluacion_procesos WHERE proceso_id IN (${ids.map(() => '?').join(',')}))` : ''})`); p.push(req.u.id, ...ids); }
     return todos(`${SELECT_EVAL} WHERE ${w.join(' AND ')} ORDER BY e.anio DESC, e.fecha_inicio, e.id`, ...p);
   }));
 
   function cargarEval(req) {
     const e = uno(`${SELECT_EVAL} WHERE e.id = ? AND e.empresa_id = ?`, req.params.id, req.u.empresa_id);
     if (!e) falla(404, 'Evaluación no encontrada');
+    const ids = alcance.propios(req.u);
+    if (ids !== null && e.auditor_id !== req.u.id && !todos('SELECT proceso_id FROM evaluacion_procesos WHERE evaluacion_id = ?', e.id).some(x => ids.includes(x.proceso_id)))
+      falla(404, 'Evaluación no encontrada');
     return e;
   }
 
   app.get('/api/evaluaciones/:id', r(req => {
     const e = cargarEval(req);
-    const items = todos('SELECT * FROM verificacion_items WHERE evaluacion_id = ? ORDER BY proceso_id, id', e.id);
+    // Quien no es auditor y lidera un proceso solo ve lo de su proceso dentro de la evaluación
+    const ids = alcance.propios(req.u), propio = x => ids === null || esAuditor(e, req.u) || ids.includes(x.proceso_id);
+    const items = todos('SELECT * FROM verificacion_items WHERE evaluacion_id = ? ORDER BY proceso_id, id', e.id).filter(propio);
     return {
       ...e, puede_editar: esCalidad(req.u), es_auditor: esAuditor(e, req.u),
       lista_procesos: todos(`SELECT ep.*, p.nombre, u.nombre auditado FROM evaluacion_procesos ep JOIN procesos p ON p.id = ep.proceso_id
-        LEFT JOIN usuarios u ON u.id = ep.auditado_id WHERE ep.evaluacion_id = ? ORDER BY p.orden`, e.id),
+        LEFT JOIN usuarios u ON u.id = ep.auditado_id WHERE ep.evaluacion_id = ? ORDER BY p.orden`, e.id).filter(propio),
       items,
       resumen: ['Conforme', 'No conforme', 'Observación', 'No aplica', null].map(x => ({ resultado: x, n: items.filter(i => i.resultado === x).length })),
       hallazgos: todos(`SELECT h.*, p.nombre proceso, (SELECT COUNT(*) FROM acciones a WHERE a.hallazgo_id = h.id) total_acciones
-        FROM hallazgos h LEFT JOIN procesos p ON p.id = h.proceso_id WHERE h.evaluacion_id = ? ORDER BY h.id`, e.id),
+        FROM hallazgos h LEFT JOIN procesos p ON p.id = h.proceso_id WHERE h.evaluacion_id = ? ORDER BY h.id`, e.id).filter(propio),
     };
   }));
 
@@ -245,7 +253,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     FROM acciones a JOIN hallazgos h ON h.id = a.hallazgo_id LEFT JOIN procesos p ON p.id = h.proceso_id
     LEFT JOIN usuarios u ON u.id = a.responsable_id LEFT JOIN usuarios v ON v.id = a.verificador_id`;
   const conVencida = a => ({ ...a, vencida: a.estado !== 'Cerrada' && a.fecha_compromiso && a.fecha_compromiso < hoy() ? 1 : 0 });
-  const puedeGestionar = (a, u) => esCalidad(u) || a.responsable_id === u.id || (u.rol === 'lider_proceso' && a.proceso_id === u.proceso_id);
+  const puedeGestionar = (a, u) => esCalidad(u) || a.responsable_id === u.id || alcance.lidera(a.proceso_id, u);
   const bitacora = (accionId, evento, comentario, u) =>
     ejecutar('INSERT INTO acciones_bitacora (accion_id, evento, comentario, usuario_id, fecha) VALUES (?,?,?,?,?)', accionId, evento, comentario || null, u.id, ahora());
 
@@ -254,11 +262,12 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     enLista(w, p, 'h.tipo', q.tipo); enLista(w, p, 'h.origen', q.origen); enLista(w, p, 'h.proceso_id', q.proceso);
     if (q.texto) { w.push('(h.descripcion LIKE ? OR h.codigo LIKE ?)'); p.push(`%${q.texto}%`, `%${q.texto}%`); }
     if (q.sin_accion === '1') w.push('NOT EXISTS (SELECT 1 FROM acciones a WHERE a.hallazgo_id = h.id)');
+    const fh = alcance.filtro(req.u, 'h.proceso_id');
     return todos(`SELECT h.*, p.nombre proceso, e.codigo evaluacion_codigo, u.nombre registrado_por,
         (SELECT COUNT(*) FROM acciones a WHERE a.hallazgo_id = h.id) total_acciones,
         (SELECT COUNT(*) FROM acciones a WHERE a.hallazgo_id = h.id AND a.estado = 'Cerrada') acciones_cerradas
       FROM hallazgos h LEFT JOIN procesos p ON p.id = h.proceso_id LEFT JOIN evaluaciones e ON e.id = h.evaluacion_id
-      LEFT JOIN usuarios u ON u.id = h.usuario_id WHERE ${w.join(' AND ')} ORDER BY h.id DESC`, ...p);
+      LEFT JOIN usuarios u ON u.id = h.usuario_id WHERE ${w.join(' AND ')}${fh.sql} ORDER BY h.id DESC`, ...p, ...fh.params);
   }));
 
   // Hallazgos de otras fuentes (quejas, indicadores, riesgos, producto no conforme…)
@@ -268,7 +277,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     if (!ORIGENES.includes(b.origen)) falla(400, 'Origen inválido');
     if (!['No conformidad mayor', 'No conformidad menor', 'Observación', 'Oportunidad de mejora'].includes(b.tipo)) falla(400, 'Tipo de hallazgo inválido');
     if (!String(b.descripcion || '').trim() || !b.proceso_id) falla(400, 'Proceso y descripción son obligatorios');
-    if (u.rol === 'lider_proceso' && Number(b.proceso_id) !== u.proceso_id) falla(403, 'Solo registras hallazgos de tu proceso');
+    if (u.rol === 'lider_proceso' && !alcance.lidera(b.proceso_id, u)) falla(403, 'Solo registras hallazgos de tu proceso');
     return { id: crearHallazgo({ ...b, evaluacion_id: null, item_id: null }, u) };
   }));
 
@@ -277,6 +286,8 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     enLista(w, p, 'a.estado', q.estado); enLista(w, p, 'a.tipo', q.tipo); enLista(w, p, 'h.proceso_id', q.proceso); enLista(w, p, 'h.origen', q.origen);
     if (q.mias === '1') { w.push('a.responsable_id = ?'); p.push(req.u.id); }
     if (q.texto) { w.push('(a.codigo LIKE ? OR h.descripcion LIKE ? OR a.causa_raiz LIKE ?)'); p.push(...Array(3).fill(`%${q.texto}%`)); }
+    const ids = alcance.propios(req.u); // el líder ve las acciones de los hallazgos de su proceso o las que le asignaron
+    if (ids !== null) { w.push(`(a.responsable_id = ?${ids.length ? ` OR h.proceso_id IN (${ids.map(() => '?').join(',')})` : ''})`); p.push(req.u.id, ...ids); }
     let out = todos(`${SELECT_ACC} WHERE ${w.join(' AND ')} ORDER BY a.estado = 'Cerrada', a.fecha_compromiso`, ...p).map(conVencida);
     if (q.vencidas === '1') out = out.filter(a => a.vencida);
     return out;
@@ -284,7 +295,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
 
   app.get('/api/acciones/:id', r(req => {
     const a = uno(`${SELECT_ACC} WHERE a.id = ? AND a.empresa_id = ?`, req.params.id, req.u.empresa_id);
-    if (!a) falla(404, 'Acción no encontrada');
+    if (!a || !(alcance.ve(a.proceso_id, req.u) || a.responsable_id === req.u.id)) falla(404, 'Acción no encontrada');
     return {
       ...conVencida(a), puede_gestionar: puedeGestionar(a, req.u), puede_verificar: esCalidad(req.u),
       hallazgo_completo: uno(`SELECT h.*, e.codigo evaluacion_codigo FROM hallazgos h LEFT JOIN evaluaciones e ON e.id = h.evaluacion_id WHERE h.id = ?`, a.hallazgo_id),
@@ -299,7 +310,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     const b = req.body, u = req.u;
     const h = uno('SELECT * FROM hallazgos WHERE id = ? AND empresa_id = ?', b.hallazgo_id, u.empresa_id);
     if (!h) falla(404, 'Hallazgo no encontrado');
-    if (!esCalidad(u) && !(u.rol === 'lider_proceso' && h.proceso_id === u.proceso_id)) falla(403, 'Solo Calidad o el líder del proceso abren acciones');
+    if (!esCalidad(u) && !alcance.lidera(h.proceso_id, u)) falla(403, 'Solo Calidad o el líder del proceso abren acciones');
     if (!['Corrección', 'Acción correctiva', 'Acción de mejora'].includes(b.tipo)) falla(400, 'Tipo de acción inválido');
     if (h.tipo.startsWith('No conformidad') && b.tipo === 'Acción de mejora') falla(400, 'Una no conformidad requiere acción correctiva o corrección');
     if (!b.fecha_compromiso) falla(400, 'Define la fecha de compromiso');
@@ -399,7 +410,9 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   // Estadísticas + valor sugerido para el indicador "Acciones correctivas"
   app.get('/api/acciones-estadisticas', r(req => {
     const e = req.u.empresa_id, anio = Number(req.query.anio) || new Date().getFullYear();
-    const acc = todos(`${SELECT_ACC} WHERE a.empresa_id = ? AND substr(a.creado, 1, 4) = ?`, e, String(anio)).map(conVencida);
+    const acc = todos(`${SELECT_ACC} WHERE a.empresa_id = ? AND substr(a.creado, 1, 4) = ?`, e, String(anio)).map(conVencida)
+      .filter(a => alcance.propios(req.u) === null || alcance.ve(a.proceso_id, req.u) || a.responsable_id === req.u.id);
+    const fp = alcance.filtro(req.u, 'p.id');
     const cerradas = acc.filter(a => a.estado === 'Cerrada');
     return {
       anio, total: acc.length, abiertas: acc.length - cerradas.length, cerradas: cerradas.length,
@@ -409,7 +422,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
       por_estado: ['Análisis', 'Ejecución', 'Verificación', 'Cerrada'].map(s => ({ estado: s, n: acc.filter(a => a.estado === s).length })),
       por_proceso: todos(`SELECT p.nombre, COUNT(h.id) hallazgos,
           SUM(h.tipo LIKE 'No conformidad%') nc FROM procesos p LEFT JOIN hallazgos h ON h.proceso_id = p.id AND substr(h.fecha, 1, 4) = ?
-        WHERE p.empresa_id = ? GROUP BY p.id HAVING hallazgos > 0 ORDER BY hallazgos DESC`, String(anio), e),
+        WHERE p.empresa_id = ?${fp.sql} GROUP BY p.id HAVING hallazgos > 0 ORDER BY hallazgos DESC`, String(anio), e, ...fp.params),
     };
   }));
 

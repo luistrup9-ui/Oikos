@@ -88,23 +88,27 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   const administra = (m, u) => esCalidad(u) || m.coordinador_id === u.id || /Administrador/.test(integrante(m, u)?.privilegio || '');
   const puedeActas = (m, u) => administra(m, u) || !!integrante(m, u)?.adiciona_actas;
   const puedeCompromisos = (m, u) => administra(m, u) || (!!m.miembros_compromisos && !!integrante(m, u));
-  const veMecanismo = (m, u) => u.rol !== 'consulta' || !!integrante(m, u) || esCalidad(u);
+  // Solo ve los mecanismos de los que hace parte (o que coordina); Calidad y administración ven todos
+  const veMecanismo = (m, u) => esCalidad(u) || !!integrante(m, u) ||
+    (m.coordinador_id ?? uno('SELECT coordinador_id FROM mecanismos WHERE id = ?', m.id)?.coordinador_id) === u.id;
+  const asistenteDe = (acta, u) => !!uno('SELECT 1 FROM acta_asistentes WHERE acta_id = ? AND usuario_id = ?', acta.id, u.id);
+  const responsableDe = (c, u) => !!uno('SELECT 1 FROM compromiso_responsables WHERE compromiso_id = ? AND usuario_id = ?', c.id, u.id);
 
-  function cargarMecanismo(id, u) {
+  function cargarMecanismo(id, u, tieneAcceso = false) {
     const m = uno('SELECT * FROM mecanismos WHERE id = ? AND empresa_id = ?', id, u.empresa_id);
     if (!m) falla(404, 'Mecanismo no encontrado');
-    if (!veMecanismo(m, u)) falla(403, 'No haces parte de este mecanismo');
+    if (!tieneAcceso && !veMecanismo(m, u)) falla(403, 'No haces parte de este mecanismo');
     return m;
   }
   function cargarActa(id, u) {
     const a = uno('SELECT * FROM actas WHERE id = ?', id);
     if (!a) falla(404, 'Acta no encontrada');
-    return { acta: a, m: cargarMecanismo(a.mecanismo_id, u) };
+    return { acta: a, m: cargarMecanismo(a.mecanismo_id, u, asistenteDe(a, u)) }; // quien está convocado al acta la ve
   }
   function cargarCompromiso(id, u) {
     const c = uno('SELECT * FROM compromisos WHERE id = ?', id);
     if (!c) falla(404, 'Compromiso no encontrado');
-    return { c, m: cargarMecanismo(c.mecanismo_id, u) };
+    return { c, m: cargarMecanismo(c.mecanismo_id, u, responsableDe(c, u)) }; // quien es responsable del compromiso lo ve
   }
   const editable = a => { if (a.estado !== 'Abierta') falla(400, `El acta está ${a.estado.toLowerCase()}: reábrela para modificarla`); };
 
@@ -340,7 +344,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
         (SELECT COUNT(*) FROM acta_archivos f WHERE f.acta_id = a.id) n_archivos
       FROM actas a JOIN mecanismos m ON m.id = a.mecanismo_id LEFT JOIN usuarios u ON u.id = a.autor_id
       WHERE ${w.join(' AND ')} ORDER BY a.fecha DESC, a.id DESC`, ...p)
-      .filter(a => veMecanismo({ id: a.mecanismo_id }, req.u))
+      .filter(a => veMecanismo({ id: a.mecanismo_id }, req.u) || asistenteDe(a, req.u))
       .map(a => ({ ...a, asistencia: a.invitados ? a.asistentes / a.invitados * 100 : null }));
   }
   app.get('/api/actas', r(req => actasGlobal(req)));
@@ -478,7 +482,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
       else if (req.query.op === 'entre' && req.query.fecha2) { w.push('c.fecha_fin BETWEEN ? AND ?'); p.push(req.query.fecha1, req.query.fecha2); }
     }
     let lista = todos(`${SELECT_COMP} WHERE ${w.join(' AND ')} ORDER BY c.fecha_fin, c.id`, ...p).map(conEstado)
-      .filter(c => req.query.mios === '1' || veMecanismo({ id: c.mecanismo_id }, req.u));
+      .filter(c => req.query.mios === '1' || veMecanismo({ id: c.mecanismo_id }, req.u) || responsableDe(c, req.u));
     const estados = [].concat(req.query.estado || []).filter(Boolean);
     if (estados.length) lista = lista.filter(c => estados.includes(c.estado));
     return lista;

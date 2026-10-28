@@ -27,18 +27,19 @@ async function pedirCambioClave(obligatorio = false) {
   f.addEventListener('submit', enviar);
   dlg.showModal();
 }
-$('#cuenta').onclick = () => pedirCambioClave(false);
+// El cambio de clave vive en la página Personal (botón "Cambiar mi clave"); aquí solo se define la función.
 
 // ---------- Administración ----------
 rutas.admin = async function () {
   if (!esCalidad()) { vista.innerHTML = '<p class="error">No tienes permiso para esta sección.</p>'; return; }
   const esAdmin = yo.rol === 'admin';
   const pestana = new URLSearchParams(location.hash.split('?')[1] || '').get('v') || (esAdmin ? 'usuarios' : 'importar');
-  const tabs = [...(esAdmin ? [['usuarios', 'Usuarios']] : []), ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
+  const tabs = [...(esAdmin ? [['usuarios', 'Usuarios'], ['procesos', 'Procesos']] : []), ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
   vista.innerHTML = `<div class="encabezado"><h2>Administración</h2></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" onclick="location.hash='#/admin?v=${k}'">${n}</button>`).join('')}</div>
     <div id="cuerpo"></div>`;
   if (pestana === 'usuarios' && esAdmin) await pestanaUsuarios();
+  else if (pestana === 'procesos' && esAdmin) await pestanaProcesos();
   else if (pestana === 'respaldos' && esAdmin) await pestanaRespaldos();
   else await pestanaImportar();
 };
@@ -54,7 +55,7 @@ async function pestanaUsuarios() {
     <label>Cargo<input name="cargo" value="${esc(u.cargo)}"></label>
     <label>Rol<select name="rol">${Object.entries(ROL_NOMBRE).map(([k, n]) => `<option value="${k}" ${k === (u.rol || 'consulta') ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <label class="ancho">Proceso <small>(obligatorio para líder de proceso)</small><select name="proceso_id">${opciones(cat.procesos, u.proceso_id, '— Ninguno —')}</select></label></div>
-    <p class="sub" style="margin:0">Administrador: todo, incluidos los usuarios · Líder de Calidad: todos los módulos · Líder de proceso: su proceso · Consulta: solo documentos vigentes.</p>`;
+    <p class="sub" style="margin:0">Administrador: todo, incluidos los usuarios · Líder de Calidad: todos los módulos · Líder de proceso: ve el mapa y los documentos vigentes de todos, y gestiona solo su proceso · Consulta: solo lectura.</p>`;
   $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${lista.filter(u => u.activo).length} usuarios activos</p>
     <button class="btn primario" id="nuevo">Nuevo usuario</button></div>
     <div class="tabla-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Proceso</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -88,6 +89,70 @@ async function pestanaUsuarios() {
     if (baja && !await modal('Desactivar usuario', `<p><b>${esc(u.nombre)}</b> ya no podrá entrar. Sus registros se conservan.</p>`, { aceptar: 'Desactivar', peligro: true })) return;
     await api('/usuarios/' + u.id, { method: 'PUT', body: { ...u, activo: baja ? 0 : 1 } });
     aviso(baja ? 'Usuario desactivado' : 'Usuario reactivado'); recargar();
+  }));
+}
+
+// ---------- Procesos: crear procesos y subprocesos y asignar quién los lidera ----------
+async function pestanaProcesos() {
+  const lista = await api('/procesos-lideres');
+  const nombreDe = id => lista.find(p => p.id === id)?.nombre || '';
+  const hijos = id => lista.filter(p => p.padre_id === id);
+  const fila = (p, nivel) => `<tr>
+    <td style="padding-left:${8 + nivel * 22}px">${nivel ? '<span class="gris">↳</span> ' : ''}${p.codigo ? `<span class="mono gris">${esc(p.codigo)}</span> ` : ''}<b>${esc(p.nombre)}</b>${nivel ? ` <span class="gris">${esc(p.tipo)}</span>` : ''}</td>
+    <td>${p.lideres.length ? p.lideres.map(l => `<span class="chip lider-chip" title="${esc(l.cargo || l.usuario)}">${esc(l.nombre)}
+        <button type="button" class="quitar-lider" data-quitar="${p.id}:${l.id}" aria-label="Quitar a ${esc(l.nombre)} como líder">×</button></span>`).join(' ')
+      : '<span class="faltan">Sin líder</span>'}</td>
+    <td><div class="acciones"><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
+      ${nivel === 0 ? `<button class="btn chico" data-sub="${p.id}">Nuevo subproceso</button>` : ''}</div></td></tr>`;
+  const grupo = c => {
+    const raices = lista.filter(p => !p.padre_id && p.categoria === c);
+    return raices.length ? `<tr class="grupo-cat"><th colspan="3">${c}</th></tr>${raices.map(p => fila(p, 0) + hijos(p.id).map(h => fila(h, 1)).join('')).join('')}` : '';
+  };
+  $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${lista.length} procesos y subprocesos · ${lista.filter(p => p.lideres.length).length} con líder asignado</p>
+    <button class="btn primario" id="nuevoProceso">Nuevo proceso</button></div>
+    <p class="sub">Quien lidera un proceso ve el mapa y los documentos vigentes de todos, pero solo gestiona lo de su proceso. Cada persona lidera un solo proceso; un proceso puede tener varios líderes.</p>
+    <div class="tabla-wrap"><table class="tabla-procesos" data-dt="1"><thead><tr><th>Proceso</th><th>Líder(es)</th><th></th></tr></thead><tbody>
+      ${['Estratégico', 'Misional', 'Apoyo'].map(grupo).join('')}</tbody></table></div>`;
+
+  const recargar = async () => { cat = await api('/catalogos'); cargarSistemas(); await pestanaProcesos(); }; // el catálogo alimenta el mapa y el árbol lateral
+
+  const nuevo = async padre => {
+    const v = await modal(padre ? `Nuevo subproceso de ${padre.nombre}` : 'Nuevo proceso', `<div class="form">
+      <label class="ancho">Nombre<input name="nombre" required maxlength="120" autofocus></label>
+      <label>Código <small>(opcional)</small><input name="codigo" maxlength="30" placeholder="ES-XXX-XXX-01"></label>
+      <label>Sigla <small>(opcional)</small><input name="sigla" maxlength="6"></label>
+      ${padre ? `<label class="ancho">Tipo<select name="tipo"><option>Subproceso</option><option>Procedimiento</option></select></label>
+        <p class="sub ancho" style="margin:0">Hereda la categoría de su proceso (${esc(padre.categoria)}).</p>`
+      : `<label class="ancho">Categoría<select name="categoria">${['Estratégico', 'Misional', 'Apoyo'].map(c => `<option ${c === 'Apoyo' ? 'selected' : ''}>${c}</option>`).join('')}</select></label>`}</div>`, { aceptar: 'Crear' });
+    if (!v) return;
+    const r = await api('/procesos', { method: 'POST', body: { ...v, padre_id: padre?.id || null } });
+    aviso(padre ? 'Subproceso creado' : 'Proceso creado'); await recargar();
+    return r;
+  };
+  $('#nuevoProceso').onclick = intentar(() => nuevo(null));
+  $('#cuerpo').querySelectorAll('[data-sub]').forEach(b => b.onclick = intentar(() => nuevo(lista.find(p => p.id === Number(b.dataset.sub)))));
+
+  $('#cuerpo').querySelectorAll('[data-lider]').forEach(b => b.onclick = intentar(async () => {
+    const p = lista.find(x => x.id === Number(b.dataset.lider));
+    const usuarios = (await api('/usuarios')).filter(u => u.activo && !['admin', 'lider_calidad'].includes(u.rol) && !p.lideres.some(l => l.id === u.id));
+    if (!usuarios.length) { aviso('No hay más personas disponibles para liderar este proceso', true); return; }
+    const etiqueta = u => `${u.nombre} (${u.usuario})${u.rol === 'lider_proceso' && u.proceso_id ? ` — hoy lidera ${nombreDe(u.proceso_id)}` : ''}`;
+    const v = await modal(`Asignar líder: ${p.nombre}`, `<label class="ancho">Persona<select name="usuario_id" required>
+        <option value="">— Elige una persona —</option>${usuarios.map(u => `<option value="${u.id}">${esc(etiqueta(u))}</option>`).join('')}</select></label>
+      <p class="sub" style="margin:0">Pasa a tener el rol Líder de proceso: verá el mapa y los documentos vigentes de todos, y solo gestionará este proceso. Se cierran sus sesiones abiertas para que tome los permisos nuevos.</p>`, { aceptar: 'Asignar' });
+    if (!v || !v.usuario_id) return;
+    const u = usuarios.find(x => x.id === Number(v.usuario_id));
+    if (u.rol === 'lider_proceso' && u.proceso_id && u.proceso_id !== p.id
+      && !await modal('Esta persona ya lidera otro proceso', `<p><b>${esc(u.nombre)}</b> lidera <b>${esc(nombreDe(u.proceso_id))}</b>. Cada persona lidera un solo proceso: al continuar deja de liderar ese y pasa a liderar <b>${esc(p.nombre)}</b>.</p>`, { aceptar: 'Mover' })) return;
+    await api(`/procesos/${p.id}/lideres`, { method: 'POST', body: { usuario_id: u.id } });
+    aviso(`${u.nombre} ahora lidera ${p.nombre}`); await recargar();
+  }));
+
+  $('#cuerpo').querySelectorAll('[data-quitar]').forEach(b => b.onclick = intentar(async () => {
+    const [pid, uid] = b.dataset.quitar.split(':').map(Number), p = lista.find(x => x.id === pid), l = p.lideres.find(x => x.id === uid);
+    if (!await modal('Quitar líder', `<p><b>${esc(l.nombre)}</b> deja de liderar <b>${esc(p.nombre)}</b> y queda con el rol Consulta (solo lectura). Se cierran sus sesiones abiertas.</p>`, { aceptar: 'Quitar', peligro: true })) return;
+    await api(`/procesos/${pid}/lideres/${uid}`, { method: 'DELETE' });
+    aviso(`${l.nombre} ya no lidera ${p.nombre}`); await recargar();
   }));
 }
 

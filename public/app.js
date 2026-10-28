@@ -71,7 +71,7 @@ async function iniciar() {
 }
 
 // ---------- Rutas ----------
-const rutas = { inicio, mapa, documentos, documento, solicitudes, registros, estadisticas };
+const rutas = { inicio, documentos, documento, solicitudes, registros, estadisticas };
 async function enrutar() {
   if (!yo) return;
   const [, nombre = 'bienvenida', arg] = location.hash.split('?')[0].split('/');
@@ -113,20 +113,6 @@ async function inicio() {
     ${esCalidad() && p.solicitudes ? `<div class="tarjeta"><a href="#/solicitudes">Ver ${p.solicitudes} solicitud(es) por resolver →</a></div>` : ''}
     ${p.por_vencer.length ? `<div class="tarjeta"><h3>Próximos a vencer</h3>${tablaDocs(p.por_vencer)}</div>` : ''}`;
   $('#nuevaSol')?.addEventListener('click', intentar(() => nuevaSolicitud()));
-}
-
-// ---------- Mapa de procesos ----------
-async function mapa() {
-  const vigentes = await api('/documentos?estado=VIGENTE');
-  const cuenta = id => vigentes.filter(d => d.proceso_id === id).length;
-  vista.innerHTML = `<div class="encabezado"><h2>Mapa de procesos</h2></div>
-    <div class="tarjeta mapa">${['Estratégico', 'Misional', 'Apoyo'].map(c => `
-      <div class="f-${c} franja-titulo">${c.toUpperCase()}</div>
-      <div class="f-${c} franja">${cat.procesos.filter(p => p.categoria === c && !p.padre_id).map(p => `
-        <button class="proceso" onclick="location.hash='#/proceso/${p.id}'"><b>${esc(p.nombre)}</b>
-        <small>${esc(p.codigo || p.sigla)} · ${cuenta(p.id)} documento(s) vigente(s)</small>
-        ${cat.procesos.filter(h => h.padre_id === p.id).map(h => `<small class="sub-proc">↳ ${esc(h.nombre)}</small>`).join('')}</button>`).join('')}</div>`).join('')}
-    </div>`;
 }
 
 // ---------- Listado maestro ----------

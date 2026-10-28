@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS proceso_versiones (
 const TIPOS = ['Proceso', 'Subproceso', 'Procedimiento'];
 const CICLOS = ['P', 'H', 'V', 'A'];
 
-module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
+module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
   const cargar = (id, u) => {
     const p = uno('SELECT * FROM procesos WHERE id = ? AND empresa_id = ?', id, u.empresa_id);
     if (!p) falla(404, 'Proceso no encontrado');
@@ -53,8 +53,10 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
       documentacion: todos('SELECT clase, nombre FROM proceso_documentacion WHERE proceso_id = ? ORDER BY clase, nombre', p.id),
       documentos: todos(`SELECT d.id, d.codigo, d.nombre, d.version, d.estado, c.nombre clase FROM documentos d LEFT JOIN clases_documento c ON c.id = d.clase_id
         WHERE d.proceso_id = ? AND d.estado = 'VIGENTE' ORDER BY c.nombre, d.codigo`, p.id),
-      indicadores: todos('SELECT id, codigo, nombre, frecuencia, meta, unidad FROM indicadores WHERE proceso_id = ? AND activo = 1 ORDER BY codigo', p.id),
-      puede_editar: esCalidad(req.u),
+      // Quien lidera un proceso ve la ficha y los documentos vigentes de todos, pero los indicadores solo los de su proceso
+      indicadores: alcance.ve(p.id, req.u) ? todos('SELECT id, codigo, nombre, frecuencia, meta, unidad FROM indicadores WHERE proceso_id = ? AND activo = 1 ORDER BY codigo', p.id) : [],
+      propio: alcance.ve(p.id, req.u),
+      puede_editar: esCalidad(req.u) || alcance.lidera(p.id, req.u),
     };
   }));
 
@@ -72,8 +74,10 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
 
   // Editar la ficha (solo Calidad): cada guardado genera una nueva versión en el historial
   app.put('/api/procesos/:id', r(req => {
-    if (!esCalidad(req.u)) falla(403, 'Solo Calidad edita la caracterización de los procesos');
-    const p = cargar(req.params.id, req.u), b = req.body;
+    const p = cargar(req.params.id, req.u), b = { ...req.body };
+    if (!esCalidad(req.u) && !alcance.lidera(p.id, req.u)) falla(403, 'Solo Calidad o el líder del proceso editan su caracterización');
+    // El líder edita el contenido de su proceso; el nombre, el código y el tipo (su identidad) los define Calidad
+    if (!esCalidad(req.u)) { b.nombre = p.nombre; b.codigo = p.codigo; b.tipo = p.tipo; }
     if (!String(b.nombre || '').trim()) falla(400, 'El nombre es obligatorio');
     if (b.tipo && !TIPOS.includes(b.tipo)) falla(400, 'Tipo no válido');
     if (!String(b.comentario || '').trim()) falla(400, 'Describe la modificación para el historial');
@@ -94,6 +98,67 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
         p.id, version, ahora(), req.u.id, b.comentario.trim(), JSON.stringify(contenido({ ...p, ...b, id: p.id })));
       return { ok: true, version };
     });
+  }));
+  // ---------- Administración de procesos: crear procesos y asignar sus líderes (solo el administrador) ----------
+  const soloAdmin = u => { if (u.rol !== 'admin') falla(403, 'Solo el administrador crea procesos y asigna a sus líderes'); };
+  const CATEGORIAS = ['Estratégico', 'Misional', 'Apoyo'];
+  const siglaDe = nombre => String(nombre).normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/).filter(w => w.length > 3).map(w => w[0]).join('').slice(0, 4).toUpperCase() || 'PRO';
+  // Un líder lidera un solo proceso; varios líderes pueden compartir el mismo
+  const lideresDe = id => todos(`SELECT id, usuario, nombre, cargo FROM usuarios WHERE rol = 'lider_proceso' AND proceso_id = ? AND activo = 1 ORDER BY nombre`, id);
+
+  app.get('/api/procesos-lideres', r(req => {
+    soloAdmin(req.u);
+    return todos(`SELECT id, nombre, sigla, codigo, categoria, tipo, padre_id FROM procesos WHERE empresa_id = ?
+        ORDER BY CASE categoria WHEN 'Estratégico' THEN 0 WHEN 'Misional' THEN 1 ELSE 2 END, orden, nombre`, req.u.empresa_id)
+      .map(p => ({ ...p, lideres: lideresDe(p.id) }));
+  }));
+
+  app.post('/api/procesos', r(req => {
+    soloAdmin(req.u);
+    const b = req.body, nombre = String(b.nombre || '').trim();
+    if (!nombre) falla(400, 'El nombre es obligatorio');
+    const padre = b.padre_id ? cargar(b.padre_id, req.u) : null;
+    const categoria = padre ? padre.categoria : b.categoria; // un subproceso hereda la categoría de su proceso
+    if (!CATEGORIAS.includes(categoria)) falla(400, 'La categoría debe ser Estratégico, Misional o Apoyo');
+    const tipo = padre ? (TIPOS.includes(b.tipo) && b.tipo !== 'Proceso' ? b.tipo : 'Subproceso') : 'Proceso';
+    const codigo = String(b.codigo || '').trim() || null;
+    if (codigo && uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND codigo = ?', req.u.empresa_id, codigo)) falla(400, `Ya existe un proceso con el código ${codigo}`);
+    if (uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND padre_id IS ? AND lower(nombre) = lower(?)', req.u.empresa_id, padre?.id ?? null, nombre)) falla(400, 'Ya existe un proceso con ese nombre en ese lugar');
+    return transaccion(() => {
+      const orden = (uno('SELECT COALESCE(MAX(orden), 0) + 1 n FROM procesos WHERE empresa_id = ? AND padre_id IS ?', req.u.empresa_id, padre?.id ?? null)).n;
+      const id = Number(ejecutar(`INSERT INTO procesos (empresa_id, nombre, sigla, categoria, orden, padre_id, tipo, codigo, version, fecha, modificado)
+        VALUES (?,?,?,?,?,?,?,?,1,?,?)`, req.u.empresa_id, nombre, String(b.sigla || '').trim().toUpperCase() || siglaDe(nombre), categoria, orden, padre?.id ?? null, tipo, codigo,
+        ahora().slice(0, 10), ahora()).lastInsertRowid);
+      ejecutar('INSERT INTO proceso_versiones (proceso_id, version, fecha, usuario_id, comentario, contenido) VALUES (?,?,?,?,?,?)',
+        id, 1, ahora(), req.u.id, 'Creación del proceso', JSON.stringify(contenido(cargar(id, req.u))));
+      return { id };
+    });
+  }));
+
+  app.post('/api/procesos/:id/lideres', r(req => {
+    soloAdmin(req.u);
+    const p = cargar(req.params.id, req.u);
+    const u = uno('SELECT * FROM usuarios WHERE id = ? AND empresa_id = ? AND activo = 1', req.body.usuario_id, req.u.empresa_id);
+    if (!u) falla(404, 'Usuario no encontrado o inactivo');
+    if (u.rol === 'admin' || u.rol === 'lider_calidad') falla(400, 'El administrador y Calidad ya ven todo: no necesitan ser líderes de un proceso');
+    const desde = u.rol === 'lider_proceso' && u.proceso_id && u.proceso_id !== p.id ? uno('SELECT nombre FROM procesos WHERE id = ?', u.proceso_id)?.nombre : null;
+    transaccion(() => {
+      ejecutar("UPDATE usuarios SET rol = 'lider_proceso', proceso_id = ? WHERE id = ?", p.id, u.id);
+      ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id); // al cambiar de rol se cierran sus sesiones para que tome los permisos nuevos
+    });
+    return { ok: true, movido_desde: desde };
+  }));
+
+  app.delete('/api/procesos/:id/lideres/:usuario', r(req => {
+    soloAdmin(req.u);
+    const p = cargar(req.params.id, req.u);
+    const u = uno("SELECT * FROM usuarios WHERE id = ? AND empresa_id = ? AND rol = 'lider_proceso' AND proceso_id = ?", req.params.usuario, req.u.empresa_id, p.id);
+    if (!u) falla(404, 'Esa persona no es líder de este proceso');
+    transaccion(() => {
+      ejecutar("UPDATE usuarios SET rol = 'consulta', proceso_id = NULL WHERE id = ?", u.id); // deja de ser líder: queda como usuario de consulta
+      ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id);
+    });
+    return { ok: true };
   }));
 };
 module.exports.TIPOS = TIPOS;

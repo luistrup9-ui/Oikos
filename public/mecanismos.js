@@ -67,7 +67,7 @@ rutas.mecanismos = async function () {
       <div class="tabla-wrap"><table><thead><tr><th>ID</th><th>Tipo</th><th>Nombre</th><th># Actas</th><th>Administradores</th><th>Otros</th><th>Activo</th></tr></thead><tbody>
       ${lista.map(m => `<tr class="click" onclick="location.hash='#/mecanismo/${m.id}'"><td>${m.id}</td><td>${esc(m.tipo)}</td><td><a href="#/mecanismo/${m.id}">${esc(m.nombre)}</a></td>
         <td class="num">${m.n_actas}</td><td>${personas(m, true) || '—'}</td><td>${personas(m, false) || '—'}</td><td>${m.activo ? 'Sí' : 'No'}</td></tr>`).join('')}
-      </tbody></table></div>`;
+      </tbody></table></div>${lista.length ? '' : `<p class="vacio">No hay mecanismos con estos criterios.${esCalidad() ? '' : ' Aquí ves solo los de los que haces parte.'}</p>`}`;
     $('#adicionar')?.addEventListener('click', () => editarMecanismo({ tipo: $('#tipoNuevo').value, activo: 1, codificacion: 'Auto', patron: '%C', padding: 3,
       dias_recordatorio: 1, integrantes: [], ...Object.fromEntries(OPCIONES_MEC.map(([k]) => [k, 1])) }));
   });

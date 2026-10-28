@@ -122,7 +122,7 @@ function sembrar() {
 }
 sembrar();
 
-module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
+module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora }) {
   const anioActual = () => new Date().getFullYear();
 
   // Enriquecer un indicador con su serie del año, último valor, previo y semáforo
@@ -152,7 +152,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     JOIN procesos p ON p.id = i.proceso_id LEFT JOIN usuarios u ON u.id = i.responsable_id
     LEFT JOIN objetivos o ON o.id = i.objetivo_id`;
   const puedeMedir = (ind, u) => esCalidad(u) || ind.responsable_id === u.id ||
-    (u.rol === 'lider_proceso' && ind.proceso_id === u.proceso_id);
+    alcance.lidera(ind.proceso_id, u);
 
   app.get('/api/indicadores', r(req => {
     const anio = Number(req.query.anio) || anioActual();
@@ -161,7 +161,8 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     const procs = [].concat(req.query.proceso || []).filter(Boolean);
     if (procs.length) { w.push(`i.proceso_id IN (${procs.map(() => '?').join(',')})`); p.push(...procs); }
     if (req.query.texto) { w.push('(i.nombre LIKE ? OR i.codigo LIKE ?)'); p.push(`%${req.query.texto}%`, `%${req.query.texto}%`); }
-    let lista = todos(`${SELECT_IND} WHERE ${w.join(' AND ')} ORDER BY p.orden, i.codigo`, ...p).map(i => conDatos(i, anio));
+    const fi = alcance.filtro(req.u, 'i.proceso_id'); // el líder de proceso solo ve los indicadores de su proceso
+    let lista = todos(`${SELECT_IND} WHERE ${w.join(' AND ')}${fi.sql} ORDER BY p.orden, i.codigo`, ...p, ...fi.params).map(i => conDatos(i, anio));
     const sem = [].concat(req.query.semaforo || []).filter(Boolean);
     if (sem.length) lista = lista.filter(i => sem.includes(i.semaforo));
     return lista.map(i => ({ ...i, puede_medir: puedeMedir(i, req.u) }));
@@ -169,7 +170,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
 
   app.get('/api/indicadores/:id', r(req => {
     const ind = uno(`${SELECT_IND} WHERE i.id = ? AND i.empresa_id = ?`, req.params.id, req.u.empresa_id);
-    if (!ind) falla(404, 'Indicador no encontrado');
+    if (!ind || !alcance.ve(ind.proceso_id, req.u)) falla(404, 'Indicador no encontrado');
     const anio = Number(req.query.anio) || anioActual();
     return {
       ...conDatos(ind, anio), anio,
@@ -256,17 +257,17 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     const perspectivas = todos('SELECT * FROM perspectivas WHERE plan_id = ? ORDER BY orden', plan.id).map(per => {
       const objetivos = todos(`SELECT o.*, u.nombre responsable FROM objetivos o LEFT JOIN usuarios u ON u.id = o.responsable_id
         WHERE perspectiva_id = ? ORDER BY codigo`, per.id).map(o => {
-        const inds = todos(`${SELECT_IND} WHERE i.objetivo_id = ? AND i.activo = 1 ORDER BY i.codigo`, o.id).map(i => conDatos(i, anio));
+        const inds = todos(`${SELECT_IND} WHERE i.objetivo_id = ? AND i.activo = 1 ORDER BY i.codigo`, o.id).filter(i => alcance.ve(i.proceso_id, req.u)).map(i => conDatos(i, anio));
         const planes = todos(`SELECT a.*, u.nombre responsable FROM planes_accion a LEFT JOIN usuarios u ON u.id = a.responsable_id
-          WHERE a.objetivo_id = ? ORDER BY a.fecha_fin`, o.id);
+          WHERE a.objetivo_id = ? ORDER BY a.fecha_fin`, o.id).filter(a => alcance.propios(req.u) === null || a.responsable_id === req.u.id);
         const cumplimiento = promedio(inds.map(i => i.cumplimiento));
         return { ...o, indicadores: inds, planes, cumplimiento,
           avance_planes: promedio(planes.map(a => a.avance)),
           ...(cumplimiento == null ? { semaforo: 'sin_dato' } : evaluar(cumplimiento, 100, 'Ascendente', 10)) };
-      });
+      }).filter(o => alcance.propios(req.u) === null || o.indicadores.length || o.planes.length); // el líder solo ve los objetivos donde tiene algo
       const cumplimiento = promedio(objetivos.map(o => o.cumplimiento));
       return { ...per, objetivos, cumplimiento, semaforo: cumplimiento == null ? 'sin_dato' : evaluar(cumplimiento, 100, 'Ascendente', 10).semaforo };
-    });
+    }).filter(per => alcance.propios(req.u) === null || per.objetivos.length);
     return { planes, plan, anio, perspectivas, cumplimiento: promedio(perspectivas.map(p => p.cumplimiento)) };
   }));
 
@@ -324,7 +325,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   app.get('/api/mop/exportar', (req, res) => r(() => {
     const anio = Number(req.query.anio) || anioActual();
     const formato = req.query.formato === 'csv' ? 'csv' : 'xlsx';
-    const lista = todos(`${SELECT_IND} WHERE i.empresa_id = ? AND i.activo = 1 ORDER BY p.orden, i.codigo`, req.u.empresa_id).map(i => conDatos(i, anio));
+    const lista = todos(`${SELECT_IND} WHERE i.empresa_id = ? AND i.activo = 1 ORDER BY p.orden, i.codigo`, req.u.empresa_id).filter(i => alcance.ve(i.proceso_id, req.u)).map(i => conDatos(i, anio));
     const SEM = { verde: 'Cumple', amarillo: 'En alerta', rojo: 'No cumple', sin_dato: 'Sin dato' };
     // Cada periodo se ubica en el mes en que cierra (T1 → Mar, S2 → Dic, Año → Dic)
     const mesDe = (frecuencia, p) => p * 12 / PERIODOS[frecuencia] - 1;

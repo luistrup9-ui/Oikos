@@ -14,12 +14,25 @@ La base `sgi.db` se crea sola con los procesos de Metalcof. Para empezar de cero
 ## Usuarios de prueba
 | Usuario | Clave | Rol |
 |---|---|---|
-| admin | admin123 | Administrador |
+| admin | admin1234 | Administrador |
 | calidad | calidad123 | Líder de Calidad (aprueba, devuelve, publica, resuelve solicitudes) |
 | produccion | produccion123 | Líder de proceso de Producción (elabora y envía a revisión) |
 | consulta | consulta123 | Solo ve documentos vigentes |
 
-Cambia estas claves antes de usarlo en serio.
+Estas claves solo existen en una base **nueva**. Cambia las claves antes de usarlo en serio; en una base ya en uso,
+el administrador las define en Administración → Usuarios (Restablecer clave genera una temporal que se cambia en el primer ingreso).
+
+## Roles y alcance
+| Rol | Qué ve | Qué puede hacer |
+|---|---|---|
+| Administrador | Todo | Todo lo de Calidad, más crear usuarios, **crear procesos y subprocesos** y **asignar quién lidera cada proceso** (Administración → Procesos) |
+| Líder de Calidad | Todo | Aprobar, devolver y publicar documentos, editar la ficha de cualquier proceso, gestionar indicadores, riesgos, evaluaciones y mecanismos |
+| Líder de proceso | El mapa y la ficha de **todos** los procesos, y los documentos vigentes, registros y glosario de todos. De **su proceso** (y sus subprocesos): borradores, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones, estadísticas y cuadro de mando. Mecanismos, actas y compromisos: solo aquellos de los que hace parte | Gestionar lo de su proceso y editar el contenido de su ficha (el nombre, el código y el tipo los define Calidad). No edita otros procesos |
+| Consulta | Solo lectura de los documentos vigentes, registros, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones y cuadro de mando de todos los procesos; no ve solicitudes, mecanismos, actas ni compromisos | Solo lectura |
+
+- Cada persona lidera **un** proceso; un proceso puede tener varios líderes. Al asignar o quitar un líder se cierran sus sesiones para que tome los permisos nuevos.
+- «Hace parte» de un mecanismo = integrante, coordinador, convocado a un acta o responsable de un compromiso.
+- Las reglas de alcance están en `alcance.js` (`propios`, `lidera`, `ve`, `filtro`); los módulos del servidor las reutilizan.
 
 ## Qué incluye
 - **Mi plan de trabajo**: transiciones pendientes, solicitudes por resolver y documentos por vencer.
