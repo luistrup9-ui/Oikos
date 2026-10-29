@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS proceso_versiones (
   usuario_id INTEGER REFERENCES usuarios(id), comentario TEXT, contenido TEXT);
 `);
 
+// (Aquí y no en db.js porque necesita padre_id) Un Líder sin lista (base anterior o recién sembrada) conserva lo que veía: su proceso y los subprocesos de ese proceso
+db.exec(`INSERT OR IGNORE INTO usuario_procesos (usuario_id, proceso_id)
+  SELECT u.id, p.id FROM usuarios u JOIN procesos p ON p.id = u.proceso_id OR p.padre_id = u.proceso_id
+  WHERE u.rol = 'lider_proceso' AND u.proceso_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM usuario_procesos x WHERE x.usuario_id = u.id)`);
+
 const TIPOS = ['Proceso', 'Subproceso', 'Procedimiento'];
 const CICLOS = ['P', 'H', 'V', 'A'];
 
@@ -103,8 +108,9 @@ module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, trans
   const soloAdmin = u => { if (u.rol !== 'admin') falla(403, 'Solo el administrador crea procesos y asigna a sus líderes'); };
   const CATEGORIAS = ['Estratégico', 'Misional', 'Apoyo'];
   const siglaDe = nombre => String(nombre).normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/).filter(w => w.length > 3).map(w => w[0]).join('').slice(0, 4).toUpperCase() || 'PRO';
-  // Un líder lidera un solo proceso; varios líderes pueden compartir el mismo
-  const lideresDe = id => todos(`SELECT id, usuario, nombre, cargo FROM usuarios WHERE rol = 'lider_proceso' AND proceso_id = ? AND activo = 1 ORDER BY nombre`, id);
+  // Un Líder puede liderar varios procesos y subprocesos, y un proceso puede tener varios líderes
+  const lideresDe = id => todos(`SELECT u.id, u.usuario, u.correo, u.nombre, u.cargo FROM usuarios u JOIN usuario_procesos up ON up.usuario_id = u.id
+    WHERE up.proceso_id = ? AND u.rol = 'lider_proceso' AND u.activo = 1 ORDER BY u.nombre`, id);
 
   app.get('/api/procesos-lideres', r(req => {
     soloAdmin(req.u);
@@ -135,30 +141,41 @@ module.exports = function (app, { alcance, uno, todos, ejecutar, r, falla, trans
     });
   }));
 
+  // Agrega este proceso a los que lidera la persona (si es un proceso principal, también sus subprocesos)
   app.post('/api/procesos/:id/lideres', r(req => {
     soloAdmin(req.u);
     const p = cargar(req.params.id, req.u);
     const u = uno('SELECT * FROM usuarios WHERE id = ? AND empresa_id = ? AND activo = 1', req.body.usuario_id, req.u.empresa_id);
     if (!u) falla(404, 'Usuario no encontrado o inactivo');
-    if (u.rol === 'admin' || u.rol === 'lider_calidad') falla(400, 'El administrador y Calidad ya ven todo: no necesitan ser líderes de un proceso');
-    const desde = u.rol === 'lider_proceso' && u.proceso_id && u.proceso_id !== p.id ? uno('SELECT nombre FROM procesos WHERE id = ?', u.proceso_id)?.nombre : null;
+    if (u.rol === 'admin' || u.rol === 'lider_calidad') falla(400, 'El administrador y el Gestor de Calidad ya ven todo: no necesitan ser líderes de un proceso');
+    const ids = req.body.con_subprocesos === false ? [p.id] : todos('SELECT id FROM procesos WHERE id = ? OR padre_id = ?', p.id, p.id).map(x => x.id);
     transaccion(() => {
-      ejecutar("UPDATE usuarios SET rol = 'lider_proceso', proceso_id = ? WHERE id = ?", p.id, u.id);
-      ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id); // al cambiar de rol se cierran sus sesiones para que tome los permisos nuevos
+      for (const id of ids) ejecutar('INSERT OR IGNORE INTO usuario_procesos (usuario_id, proceso_id) VALUES (?,?)', u.id, id);
+      if (u.rol !== 'lider_proceso' || !u.proceso_id) {
+        ejecutar("UPDATE usuarios SET rol = 'lider_proceso', proceso_id = COALESCE(proceso_id, ?) WHERE id = ?", p.padre_id || p.id, u.id);
+        ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id); // al cambiar de rol se cierran sus sesiones para que tome los permisos nuevos
+      }
     });
-    return { ok: true, movido_desde: desde };
+    return { ok: true, agregados: ids.length };
   }));
 
+  // Quita solo este proceso; si ya no lidera ninguno, queda como Colaborador
   app.delete('/api/procesos/:id/lideres/:usuario', r(req => {
     soloAdmin(req.u);
     const p = cargar(req.params.id, req.u);
-    const u = uno("SELECT * FROM usuarios WHERE id = ? AND empresa_id = ? AND rol = 'lider_proceso' AND proceso_id = ?", req.params.usuario, req.u.empresa_id, p.id);
+    const u = uno(`SELECT u.* FROM usuarios u JOIN usuario_procesos up ON up.usuario_id = u.id WHERE u.id = ? AND u.empresa_id = ? AND up.proceso_id = ?`, req.params.usuario, req.u.empresa_id, p.id);
     if (!u) falla(404, 'Esa persona no es líder de este proceso');
+    let quedan = 0;
     transaccion(() => {
-      ejecutar("UPDATE usuarios SET rol = 'consulta', proceso_id = NULL WHERE id = ?", u.id); // deja de ser líder: queda como usuario de consulta
-      ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id);
+      ejecutar('DELETE FROM usuario_procesos WHERE usuario_id = ? AND proceso_id = ?', u.id, p.id);
+      const resto = todos('SELECT up.proceso_id, pr.padre_id FROM usuario_procesos up JOIN procesos pr ON pr.id = up.proceso_id WHERE up.usuario_id = ?', u.id);
+      quedan = resto.length;
+      if (!quedan) {
+        ejecutar("UPDATE usuarios SET rol = 'consulta', proceso_id = NULL WHERE id = ?", u.id);
+        ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id);
+      } else if (u.proceso_id === p.id) ejecutar('UPDATE usuarios SET proceso_id = ? WHERE id = ?', (resto.find(x => !x.padre_id) || resto[0]).proceso_id, u.id);
     });
-    return { ok: true };
+    return { ok: true, quedan };
   }));
 };
 module.exports.TIPOS = TIPOS;

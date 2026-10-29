@@ -104,7 +104,7 @@ rutas.riesgos = async function () {
 
 async function editarRiesgo(x) {
   const cr = await catalogosRiesgo();
-  const procesos = esCalidad() ? cat.procesos : cat.procesos.filter(p => p.id === yo.proceso_id);
+  const procesos = esCalidad() ? cat.procesos : cat.procesos.filter(p => (yo.procesos_propios || [yo.proceso_id]).includes(p.id)); // su proceso y sus subprocesos
   const escala = (n, lista, v) => `<select name="${n}" required>${lista.map((t, k) => `<option value="${k + 1}" ${Number(v) === k + 1 ? 'selected' : ''}>${k + 1} · ${esc(t)}</option>`).join('')}</select>`;
   const v = await modal(x.id ? 'Editar riesgo' : 'Nuevo riesgo', `<div class="form">
     <label class="ancho">Riesgo<input name="nombre" required value="${esc(x.nombre)}" placeholder="Posibilidad de… debido a… que genera…"></label>

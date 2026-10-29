@@ -7,7 +7,8 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fecha = v => v ? esc(String(v).slice(0, 16)) : '—';
 const estado = (id, nombre) => `<span class="estado ${esc(id)}" title="${esc(nombre)}">${esc(cat?.estados.find(e => e.id === id)?.nombre.split(' (')[0] || id)}</span>`;
 const esCalidad = () => yo && (yo.rol === 'admin' || yo.rol === 'lider_calidad');
-const ROLES = { admin: 'Administrador', lider_calidad: 'Líder de Calidad', lider_proceso: 'Líder de proceso', consulta: 'Consulta' };
+// Las claves internas de los roles no cambian (la base las exige); estos son los nombres que ve la gente
+const ROLES = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lider_proceso: 'Líder', consulta: 'Colaborador' };
 
 async function api(url, opciones = {}) {
   const o = { ...opciones, headers: { ...(opciones.headers || {}) } };
@@ -47,15 +48,52 @@ function modal(titulo, cuerpo, { aceptar = 'Guardar', peligro = false } = {}) {
 }
 
 // ---------- Sesión ----------
-function mostrarLogin() { $('#app').hidden = true; $('#login').hidden = false; }
+// El enlace del correo de recuperación abre #/restablecer?t=<token>
+const tokenRestablecer = () => (/^#\/restablecer\?t=([a-f0-9]{64})$/.exec(location.hash) || [])[1];
+function verAcceso(id) {
+  for (const f of ['formLogin', 'formOlvide', 'formRestablecer']) $('#' + f).hidden = f !== id;
+  $('#' + id).querySelector('input')?.focus();
+}
+function mostrarLogin() { $('#app').hidden = true; $('#login').hidden = false; verAcceso(tokenRestablecer() ? 'formRestablecer' : 'formLogin'); }
+const salirDeRestablecer = () => { if (tokenRestablecer()) history.replaceState(null, '', location.pathname); };
 $('#formLogin').addEventListener('submit', async e => {
   e.preventDefault();
-  try { await api('/login', { method: 'POST', body: valoresForm(e.target) }); $('#errLogin').textContent = ''; iniciar(); }
+  try { await api('/login', { method: 'POST', body: valoresForm(e.target) }); $('#errLogin').textContent = ''; $('#okLogin').hidden = true; iniciar(); }
   catch (err) { $('#errLogin').textContent = err.message; }
+});
+$('#irOlvide').onclick = () => {
+  const escrito = $('#formLogin').usuario.value.trim();
+  $('#formOlvide').correo.value = escrito.includes('@') ? escrito : '';
+  $('#okOlvide').hidden = true; $('#errOlvide').textContent = '';
+  verAcceso('formOlvide');
+};
+document.querySelectorAll('#login [data-volver]').forEach(b => b.onclick = () => { salirDeRestablecer(); verAcceso('formLogin'); });
+$('#formOlvide').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const r = await api('/olvide', { method: 'POST', body: valoresForm(e.target) });
+    $('#errOlvide').textContent = '';
+    $('#okOlvide').textContent = r.por_correo
+      ? 'Si el correo está registrado, te llegará un enlace para elegir una clave nueva (vale 60 minutos). Revisa también el correo no deseado.'
+      : 'Si el correo está registrado, el administrador recibió tu solicitud y te entregará una clave temporal.';
+    $('#okOlvide').hidden = false;
+  } catch (err) { $('#errOlvide').textContent = err.message; }
+});
+$('#formRestablecer').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = valoresForm(e.target);
+  if (v.nueva !== v.repetir) { $('#errRestablecer').textContent = 'Las claves no coinciden'; return; }
+  try {
+    await api('/restablecer', { method: 'POST', body: { token: tokenRestablecer(), nueva: v.nueva } });
+    e.target.reset(); $('#errRestablecer').textContent = ''; salirDeRestablecer();
+    $('#okLogin').textContent = 'Clave actualizada. Ingresa con tu correo y la clave nueva.'; $('#okLogin').hidden = false;
+    verAcceso('formLogin');
+  } catch (err) { $('#errRestablecer').textContent = err.message; }
 });
 $('#salir').onclick = async e => { e.preventDefault(); await api('/logout', { method: 'POST' }); mostrarLogin(); };
 
 async function iniciar() {
+  if (tokenRestablecer()) return; // se llegó desde el enlace del correo: primero se elige la clave nueva
   try { yo = await api('/yo'); } catch { return; }
   cat = await api('/catalogos');
   $('#usuario').textContent = yo.nombre;

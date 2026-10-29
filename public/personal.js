@@ -135,7 +135,7 @@
         <div class="pers-avatar" aria-hidden="true">${esc(iniciales)}</div>
         <div class="pers-datos"><h2>${esc(yo.nombre)}</h2>
           <p class="pers-cargo"><i class="ic ic-usuario"></i><span>${esc(yo.cargo || ROLES[yo.rol] || '')}</span>${proceso ? `<em>/ ${esc(proceso)}</em>` : ''}</p>
-          <p class="pers-sub">${esc(ROLES[yo.rol] || '')}${yo.empresa ? ' en ' + esc(yo.empresa) : ''}</p></div>
+          <p class="pers-sub">${esc(ROLES[yo.rol] || '')}${yo.empresa ? ' en ' + esc(yo.empresa) : ''}${yo.correo ? ` · ${esc(yo.correo)}` : ''}</p></div>
         <button class="btn" id="cambiarClave" title="Cambiar la clave con la que ingresas"><i class="ic ic-llave"></i> Cambiar mi clave</button></header>
       <div class="tabs" role="tablist"><button class="activo" role="tab" data-pestana="actividades">Actividades</button><button role="tab" data-pestana="sgi">Mi SGI</button></div>
       <div class="pers-panel" data-panel="actividades"></div>`;

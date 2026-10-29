@@ -1,6 +1,7 @@
 // Prueba de mecanismos de integración: node prueba-mecanismos.js (con el servidor corriendo).
 // Crea su propio comité de prueba, así que funciona también con una base usada.
 const B = 'http://localhost:3100/api';
+const CUENTA = { produccion: 'lider', calidad: 'gestor', consulta: 'colaborador' }; // etiqueta de la prueba → cuenta sembrada por rol
 const sesiones = {};
 async function llamar(quien, ruta, cuerpo, metodo) {
   const o = { method: metodo || (cuerpo ? 'POST' : 'GET'), headers: { cookie: sesiones[quien] || '' } };
@@ -17,7 +18,7 @@ const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALL
 const dia = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
 (async () => {
-  for (const u of ['calidad', 'produccion', 'consulta']) await llamar(u, '/login', { usuario: u, clave: u + '123' });
+  for (const u of ['calidad', 'produccion', 'consulta']) await llamar(u, '/login', { usuario: CUENTA[u], clave: CUENTA[u] + '123' });
   const cat = await llamar('calidad', '/catalogos');
   const id = u => cat.usuarios.find(x => x.rol === u).id;
   const [calidad, produccion, consulta] = [id('lider_calidad'), id('lider_proceso'), id('consulta')];

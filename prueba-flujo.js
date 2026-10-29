@@ -13,9 +13,9 @@ let fallos = 0;
 const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALLA') + ' ' + nombre); if (!cond) { fallos++; console.log('      ', detalle); } };
 
 (async () => {
-  await llamar('produccion', '/login', { usuario: 'produccion', clave: 'produccion123' });
-  await llamar('calidad', '/login', { usuario: 'calidad', clave: 'calidad123' });
-  await llamar('consulta', '/login', { usuario: 'consulta', clave: 'consulta123' });
+  await llamar('produccion', '/login', { usuario: 'lider', clave: 'lider123' });
+  await llamar('calidad', '/login', { usuario: 'gestor', clave: 'gestor123' });
+  await llamar('consulta', '/login', { usuario: 'colaborador', clave: 'colaborador123' });
 
   let r = await llamar('produccion', '/solicitudes', { tipo_solicitud: 'Creación', tipo_id: 3, clase_id: 10, proceso_id: 9,
     nombre: 'Procedimiento de soldadura', justificacion: 'Nuevo proceso de soldadura MIG' });

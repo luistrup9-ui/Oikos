@@ -2,9 +2,12 @@
 const crypto = require('node:crypto');
 const { hash, verificar } = require('./db');
 const { TIPOS: TIPOS_RIESGO } = require('./riesgos');
+const mail = require('./correo');
 
 const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 const ROLES = ['admin', 'lider_calidad', 'lider_proceso', 'consulta'];
+// Las claves internas no cambian (la base las exige); estos son los nombres que ve la gente
+const ROL_ETIQUETA = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lider_proceso: 'Líder', consulta: 'Colaborador' };
 const FRECUENCIAS = { Mensual: 12, Bimestral: 6, Trimestral: 4, Semestral: 2, Anual: 1 };
 
 function generarClave() {
@@ -81,30 +84,74 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   const tokenDe = req => (/(?:^|;\s*)sgi=([a-f0-9]+)/.exec(req.headers.cookie || '') || [])[1];
 
   // ---------- Usuarios ----------
+  // Se ingresa con el correo corporativo; `usuario` es un nombre corto interno que se deduce del correo y que también sirve para ingresar
+  const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  const limpiarCorreo = c => String(c ?? '').trim().toLowerCase();
+  const correoLibre = (correo, idPropio = 0) => {
+    if (!CORREO.test(correo) || correo.length > 120) falla(400, 'El correo no es válido (ejemplo: nombre@empresa.com)');
+    if (uno('SELECT 1 FROM usuarios WHERE correo = ? AND id != ?', correo, idPropio)) falla(400, 'Ese correo ya pertenece a otro usuario');
+  };
+  const usuarioDesde = correo => {
+    const base = norm(correo.split('@')[0]).replace(/[^a-z0-9._-]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 26).padEnd(3, 'x');
+    let u = base, n = 2;
+    while (uno('SELECT 1 FROM usuarios WHERE usuario = ?', u)) u = base + n++; // si ya existe se le agrega un número
+    return u;
+  };
+
   app.get('/api/usuarios', r(req => {
     soloAdmin(req.u);
-    return todos(`SELECT u.id, u.usuario, u.nombre, u.cargo, u.rol, u.proceso_id, u.activo, u.debe_cambiar, p.nombre proceso
-      FROM usuarios u LEFT JOIN procesos p ON p.id = u.proceso_id WHERE u.empresa_id = ? ORDER BY u.activo DESC, u.nombre`, req.u.empresa_id);
+    const marcados = {};
+    for (const x of todos('SELECT up.usuario_id, up.proceso_id FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id WHERE u.empresa_id = ?', req.u.empresa_id))
+      (marcados[x.usuario_id] ||= []).push(x.proceso_id);
+    return todos(`SELECT u.id, u.usuario, u.correo, u.nombre, u.cargo, u.cargo_id, u.rol, u.proceso_id, u.activo, u.debe_cambiar, u.reinicio_solicitado, p.nombre proceso
+      FROM usuarios u LEFT JOIN procesos p ON p.id = u.proceso_id WHERE u.empresa_id = ? ORDER BY u.activo DESC, u.nombre`, req.u.empresa_id)
+      .map(u => ({ ...u, procesos: u.rol === 'lider_proceso' ? marcados[u.id] || [] : [] }));
   }));
 
+  // El Líder lidera los procesos y subprocesos que el administrador le marque (usuario_procesos); los demás roles pueden tener un proceso de referencia
+  const listaIds = v => [...new Set([].concat(v ?? []).flatMap(x => String(x).split(',')).map(Number).filter(n => n > 0))];
+  const conSubprocesos = id => todos('SELECT id FROM procesos WHERE id = ? OR padre_id = ?', id, id).map(p => p.id);
   function validarPerfil(b, empresaId) {
     if (!String(b.nombre || '').trim()) falla(400, 'El nombre es obligatorio');
     if (!ROLES.includes(b.rol)) falla(400, 'Rol inválido');
-    if (b.rol === 'lider_proceso' && !b.proceso_id) falla(400, 'El líder de proceso necesita un proceso');
-    if (b.proceso_id && !uno('SELECT 1 FROM procesos WHERE id = ? AND empresa_id = ?', b.proceso_id, empresaId)) falla(400, 'Proceso inválido');
+    b.procesos = b.rol !== 'lider_proceso' ? [] : b.procesos !== undefined ? listaIds(b.procesos) : b.proceso_id ? conSubprocesos(Number(b.proceso_id)) : [];
+    if (b.rol === 'lider_proceso' && !b.procesos.length) falla(400, 'Marca al menos un proceso que lidere');
+    for (const id of [...b.procesos, ...(b.proceso_id ? [b.proceso_id] : [])])
+      if (!uno('SELECT 1 FROM procesos WHERE id = ? AND empresa_id = ?', id, empresaId)) falla(400, 'Proceso inválido');
+    // proceso principal (agenda, perfil): el primero marcado que no sea subproceso, o el primero
+    if (b.rol === 'lider_proceso') b.proceso_id = (b.procesos.map(id => uno('SELECT id, padre_id FROM procesos WHERE id = ?', id)).find(p => !p.padre_id) || { id: b.procesos[0] }).id;
   }
+  // Cargo: si viene cargo_id, el nombre del cargo sale de la tabla de cargos
+  function resolverCargo(b, empresaId, actual = {}) {
+    if (b.cargo_id === undefined) return { cargo_id: actual.cargo_id ?? null, cargo: b.cargo ?? actual.cargo ?? null };
+    const id = Number(b.cargo_id) || null;
+    if (!id) return { cargo_id: null, cargo: null };
+    const c = uno('SELECT nombre FROM cargos WHERE id = ? AND empresa_id = ?', id, empresaId);
+    if (!c) falla(400, 'Cargo inválido');
+    return { cargo_id: id, cargo: c.nombre };
+  }
+  const guardarProcesos = (id, lista) => {
+    ejecutar('DELETE FROM usuario_procesos WHERE usuario_id = ?', id);
+    for (const p of lista) ejecutar('INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (?,?)', id, p);
+  };
 
   app.post('/api/usuarios', r(req => {
     soloAdmin(req.u);
-    const b = req.body, usuario = String(b.usuario || '').trim().toLowerCase();
-    if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) falla(400, 'El usuario va de 3 a 30 caracteres: letras minúsculas, números, punto, guion o guion bajo');
-    if (uno('SELECT 1 FROM usuarios WHERE usuario = ?', usuario)) falla(400, 'Ese usuario ya existe');
+    const b = req.body, correo = limpiarCorreo(b.correo);
+    correoLibre(correo);
+    let usuario = String(b.usuario || '').trim().toLowerCase();
+    if (usuario) {
+      if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) falla(400, 'El usuario va de 3 a 30 caracteres: letras minúsculas, números, punto, guion o guion bajo');
+      if (uno('SELECT 1 FROM usuarios WHERE usuario = ?', usuario)) falla(400, 'Ese usuario ya existe');
+    } else usuario = usuarioDesde(correo);
     validarPerfil(b, req.u.empresa_id);
     if (b.clave) claveValida(b.clave, usuario);
     const clave = b.clave ? String(b.clave) : generarClave();
-    const id = Number(ejecutar(`INSERT INTO usuarios (empresa_id, usuario, nombre, cargo, rol, proceso_id, clave, activo, debe_cambiar)
-      VALUES (?,?,?,?,?,?,?,1,1)`, req.u.empresa_id, usuario, b.nombre.trim(), b.cargo, b.rol, b.proceso_id, hash(clave)).lastInsertRowid);
-    return { id, clave_temporal: b.clave ? null : clave };
+    const cg = resolverCargo(b, req.u.empresa_id);
+    const id = Number(ejecutar(`INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, cargo_id, rol, proceso_id, clave, activo, debe_cambiar)
+      VALUES (?,?,?,?,?,?,?,?,?,1,1)`, req.u.empresa_id, usuario, correo, b.nombre.trim(), cg.cargo, cg.cargo_id, b.rol, b.proceso_id || null, hash(clave)).lastInsertRowid);
+    guardarProcesos(id, b.procesos);
+    return { id, usuario, clave_temporal: b.clave ? null : clave };
   }));
 
   app.put('/api/usuarios/:id', r(req => {
@@ -117,10 +164,34 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     if (t.id === req.u.id && !activo) falla(400, 'No puedes desactivar tu propia cuenta');
     if (t.activo && t.rol === 'admin' && (!activo || b.rol !== 'admin') && !otrosAdmins(t.id))
       falla(400, 'Debe quedar al menos un administrador activo');
-    ejecutar('UPDATE usuarios SET nombre = ?, cargo = ?, rol = ?, proceso_id = ?, activo = ? WHERE id = ?',
-      b.nombre.trim(), b.cargo, b.rol, b.proceso_id, activo, t.id);
+    // Correo: sin tocar si no viene; quien ya tiene uno no puede quedar sin él
+    let correo = t.correo;
+    if (b.correo !== undefined) {
+      const nuevo = limpiarCorreo(b.correo);
+      if (!nuevo && t.correo) falla(400, 'El correo no se puede dejar vacío: es con el que ingresa');
+      if (nuevo) { correoLibre(nuevo, t.id); correo = nuevo; }
+    }
+    const cg = resolverCargo(b, req.u.empresa_id, t);
+    ejecutar('UPDATE usuarios SET nombre = ?, cargo = ?, cargo_id = ?, rol = ?, proceso_id = ?, activo = ?, correo = ? WHERE id = ?',
+      b.nombre.trim(), cg.cargo, cg.cargo_id, b.rol, b.proceso_id || null, activo, correo, t.id);
+    guardarProcesos(t.id, b.procesos);
     if (!activo || b.rol !== t.rol) ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', t.id);
     return { ok: true };
+  }));
+
+  // Atajo para la primera carga: a quien no tiene correo se le asigna usuario@dominio (el administrador corrige los que no coincidan)
+  app.post('/api/usuarios/completar-correos', r(req => {
+    soloAdmin(req.u);
+    const dominio = String(req.body.dominio || '').trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(dominio)) falla(400, 'Escribe el dominio de la empresa, por ejemplo metalcof.co');
+    const sin = todos('SELECT id, usuario FROM usuarios WHERE empresa_id = ? AND activo = 1 AND correo IS NULL', req.u.empresa_id);
+    const omitidos = []; let actualizados = 0;
+    transaccion(() => sin.forEach(u => {
+      const correo = `${u.usuario}@${dominio}`;
+      if (!CORREO.test(correo) || uno('SELECT 1 FROM usuarios WHERE correo = ?', correo)) { omitidos.push(u.usuario); return; }
+      ejecutar('UPDATE usuarios SET correo = ? WHERE id = ?', correo, u.id); actualizados++;
+    }));
+    return { actualizados, omitidos };
   }));
 
   app.post('/api/usuarios/:id/clave', r(req => {
@@ -129,7 +200,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     if (!t) falla(404, 'Usuario no encontrado');
     if (req.body.clave) claveValida(req.body.clave, t.usuario);
     const clave = req.body.clave ? String(req.body.clave) : generarClave();
-    ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 1 WHERE id = ?', hash(clave), t.id);
+    ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 1, reinicio_solicitado = NULL WHERE id = ?', hash(clave), t.id);
     ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', t.id);
     return { clave_temporal: req.body.clave ? null : clave };
   }));
@@ -140,8 +211,57 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
     if (!verificar(String(req.body.actual || ''), u.clave)) falla(400, 'La clave actual no es correcta');
     claveValida(req.body.nueva, u.usuario);
     if (req.body.nueva === req.body.actual) falla(400, 'La clave nueva debe ser distinta de la actual');
-    ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 0 WHERE id = ?', hash(String(req.body.nueva)), u.id);
+    ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 0, reinicio_solicitado = NULL WHERE id = ?', hash(String(req.body.nueva)), u.id);
     ejecutar('DELETE FROM sesiones WHERE usuario_id = ? AND token != ?', u.id, tokenDe(req));
+    return { ok: true };
+  }));
+
+  // ---------- Olvidé mi clave (sin sesión) ----------
+  // Con correo configurado (correo.js) se envía un enlace de un solo uso; sin él, la petición queda como aviso al administrador.
+  // La respuesta es la misma exista o no el correo: no se revela quién tiene cuenta.
+  const sha256 = s => crypto.createHash('sha256').update(s).digest('hex');
+  const hace = ms => new Date(Date.now() + ms).toISOString().slice(0, 19).replace('T', ' ');
+  const pedidos = new Map();
+  const permitido = (clave, max) => { // como mucho `max` pedidos por hora para esa clave
+    const desde = Date.now() - 3600e3, p = (pedidos.get(clave) || []).filter(x => x > desde);
+    if (p.length >= max) return false;
+    p.push(Date.now()); pedidos.set(clave, p); return true;
+  };
+  const avisarAlAdmin = id => ejecutar('UPDATE usuarios SET reinicio_solicitado = ? WHERE id = ?', ahora(), id);
+  app.post('/api/olvide', r(req => {
+    const correo = limpiarCorreo(req.body.correo);
+    if (!CORREO.test(correo)) falla(400, 'Escribe tu correo');
+    const respuesta = { ok: true, por_correo: mail.configurado() };
+    if (!permitido('ip:' + req.ip, 20) || !permitido('correo:' + correo, 3)) return respuesta;
+    const u = uno('SELECT * FROM usuarios WHERE correo = ? AND activo = 1', correo);
+    if (!u) return respuesta;
+    if (!mail.configurado()) { avisarAlAdmin(u.id); return respuesta; }
+    const token = crypto.randomBytes(32).toString('hex');
+    transaccion(() => {
+      ejecutar('UPDATE reinicios_clave SET usado = ? WHERE usuario_id = ? AND usado IS NULL', ahora(), u.id); // el enlace nuevo anula los anteriores
+      ejecutar('INSERT INTO reinicios_clave (usuario_id, token_hash, creado, vence) VALUES (?,?,?,?)', u.id, sha256(token), ahora(), hace(60 * 60e3));
+    });
+    // Sin esperar el envío: así la respuesta tarda lo mismo exista o no la cuenta. Si el correo falla, se avisa al administrador.
+    mail.enviar({ a: correo, asunto: 'Restablece tu clave de OIKOS',
+      texto: `Hola ${u.nombre},\n\nPediste restablecer tu clave de OIKOS. Entra a este enlace y elige una nueva (vale 60 minutos y se usa una sola vez):\n\n${mail.enlaceRestablecer(token)}\n\nSi no lo pediste tú, ignora este mensaje: tu clave sigue igual.\n` })
+      .catch(e => { console.error('No se pudo enviar el correo de recuperación:', e.message); avisarAlAdmin(u.id); });
+    return respuesta;
+  }));
+
+  app.post('/api/restablecer', r(req => {
+    const malo = () => falla(400, 'El enlace no es válido o ya venció. Pide uno nuevo desde «¿Olvidaste tu clave?».');
+    const token = String(req.body.token || '');
+    if (!/^[a-f0-9]{64}$/.test(token)) malo();
+    const f = uno('SELECT * FROM reinicios_clave WHERE token_hash = ?', sha256(token));
+    if (!f || f.usado || f.vence < ahora()) malo();
+    const u = uno('SELECT * FROM usuarios WHERE id = ? AND activo = 1', f.usuario_id);
+    if (!u) malo();
+    claveValida(req.body.nueva, u.usuario);
+    transaccion(() => {
+      ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 0, reinicio_solicitado = NULL WHERE id = ?', hash(String(req.body.nueva)), u.id);
+      ejecutar('UPDATE reinicios_clave SET usado = ? WHERE id = ?', ahora(), f.id);
+      ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', u.id);
+    });
     return { ok: true };
   }));
 
@@ -170,7 +290,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   };
   const persona = (ctx, v, campo) => {
     if (!v) return null;
-    const x = buscar(ctx.usuarios, v, ['usuario', 'nombre']);
+    const x = buscar(ctx.usuarios, v, ['usuario', 'nombre', 'correo']);
     if (!x) throw new Error(`${campo}: no existe el usuario “${v}”`);
     return x.id;
   };
@@ -183,35 +303,55 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
   const IMPORTADORES = {
     usuarios: {
       titulo: 'Usuarios', soloAdmin: true,
-      columnas: ['usuario', 'nombre', 'cargo', 'rol', 'proceso'], requeridas: ['usuario', 'nombre', 'rol'],
-      ejemplo: ['jperez', 'Juan Pérez', 'Jefe de Producción', 'lider_proceso', 'Producción'],
-      ayuda: 'rol: admin, lider_calidad, lider_proceso o consulta. El líder de proceso necesita proceso. A cada usuario se le genera una clave temporal.',
+      columnas: ['correo', 'nombre', 'cargo', 'rol', 'proceso'], requeridas: ['correo', 'nombre', 'rol'],
+      ejemplo: ['jperez@metalcof.co', 'Juan Pérez', 'Jefe de Producción', 'Líder', 'Producción'],
+      ayuda: 'rol: Administrador, Gestor de Calidad, Líder o Colaborador. El Líder necesita proceso. La persona ingresa con su correo; a cada usuario se le genera una clave temporal.',
       preparar(f, ctx) {
-        const usuario = f.usuario.toLowerCase();
-        if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) throw new Error('usuario: 3 a 30 caracteres (minúsculas, números, . - _)');
-        if (uno('SELECT 1 FROM usuarios WHERE usuario = ?', usuario)) throw new Error(`el usuario “${usuario}” ya existe`);
-        if (ctx.vistos.has(usuario)) throw new Error(`“${usuario}” está repetido en el archivo`);
-        ctx.vistos.add(usuario);
-        const alias = { administrador: 'admin', 'lider de calidad': 'lider_calidad', 'lider de proceso': 'lider_proceso' };
+        const correo = limpiarCorreo(f.correo);
+        if (!CORREO.test(correo)) throw new Error(`correo: “${f.correo}” no es válido`);
+        if (uno('SELECT 1 FROM usuarios WHERE correo = ?', correo)) throw new Error(`el correo ${correo} ya existe`);
+        if (ctx.vistos.has(correo)) throw new Error(`“${correo}” está repetido en el archivo`);
+        ctx.vistos.add(correo);
+        const alias = { administrador: 'admin', 'gestor de calidad': 'lider_calidad', gestor: 'lider_calidad', 'lider de calidad': 'lider_calidad',
+          lider: 'lider_proceso', 'lider de proceso': 'lider_proceso', colaborador: 'consulta' };
         const rol = alias[norm(f.rol)] || elegir(f.rol, ROLES, 'rol');
         const proceso = f.proceso ? buscar(ctx.procesos, f.proceso, ['nombre', 'sigla']) : null;
         if (f.proceso && !proceso) throw new Error(`proceso: no existe “${f.proceso}”`);
-        if (rol === 'lider_proceso' && !proceso) throw new Error('el líder de proceso necesita proceso');
-        return { usuario, nombre: f.nombre, cargo: f.cargo || null, rol, proceso_id: proceso?.id ?? null, resumen: `${usuario} · ${rol}` };
+        if (rol === 'lider_proceso' && !proceso) throw new Error('el Líder necesita proceso');
+        return { correo, nombre: f.nombre, cargo: f.cargo || null, rol, proceso_id: proceso?.id ?? null, resumen: `${correo} · ${ROL_ETIQUETA[rol]}` };
       },
       aplicar(d, ctx) {
-        const clave = generarClave();
-        ejecutar(`INSERT INTO usuarios (empresa_id, usuario, nombre, cargo, rol, proceso_id, clave, activo, debe_cambiar) VALUES (?,?,?,?,?,?,?,1,1)`,
-          ctx.u.empresa_id, d.usuario, d.nombre, d.cargo, d.rol, d.proceso_id, hash(clave));
-        ctx.claves.push({ usuario: d.usuario, nombre: d.nombre, clave_temporal: clave });
+        const clave = generarClave(), usuario = usuarioDesde(d.correo);
+        ejecutar(`INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, rol, proceso_id, clave, activo, debe_cambiar) VALUES (?,?,?,?,?,?,?,?,1,1)`,
+          ctx.u.empresa_id, usuario, d.correo, d.nombre, d.cargo, d.rol, d.proceso_id, hash(clave));
+        if (d.rol === 'lider_proceso') guardarProcesos(uno('SELECT id FROM usuarios WHERE usuario = ?', usuario).id, conSubprocesos(d.proceso_id)); // el proceso con sus subprocesos
+        ctx.claves.push({ usuario: d.correo, nombre: d.nombre, clave_temporal: clave });
       },
+    },
+
+    correos: {
+      titulo: 'Correos de usuarios que ya existen', soloAdmin: true,
+      columnas: ['usuario', 'correo'], requeridas: ['usuario', 'correo'],
+      ejemplo: ['juan.perez', 'juan.perez@metalcof.co'],
+      ayuda: 'Asigna o cambia el correo de usuarios ya creados (se identifican por su usuario, o por su nombre completo). No cambia claves ni roles.',
+      preparar(f, ctx) {
+        const u = buscar(ctx.usuarios, f.usuario, ['usuario', 'nombre']);
+        if (!u) throw new Error(`usuario: no existe “${f.usuario}”`);
+        const correo = limpiarCorreo(f.correo);
+        if (!CORREO.test(correo)) throw new Error(`correo: “${f.correo}” no es válido`);
+        if (uno('SELECT 1 FROM usuarios WHERE correo = ? AND id != ?', correo, u.id)) throw new Error(`el correo ${correo} ya es de otro usuario`);
+        if (ctx.vistos.has(correo)) throw new Error(`“${correo}” está repetido en el archivo`);
+        ctx.vistos.add(correo);
+        return { id: u.id, correo, resumen: `${u.usuario} → ${correo}` };
+      },
+      aplicar(d) { ejecutar('UPDATE usuarios SET correo = ? WHERE id = ?', d.correo, d.id); },
     },
 
     documentos: {
       titulo: 'Listado maestro de documentos',
       columnas: ['codigo', 'nombre', 'tipo', 'clase', 'proceso', 'origen', 'version', 'fecha_documento', 'fecha_vencimiento', 'responsable', 'descripcion'],
       requeridas: ['nombre', 'tipo', 'clase', 'proceso'],
-      ejemplo: ['PRO-PRO-01', 'Procedimiento de soldadura', 'Procedimiento', 'Procedimientos', 'Producción', 'Interno', '1', '2025-03-10', '2027-03-10', 'produccion', ''],
+      ejemplo: ['PRO-PRO-01', 'Procedimiento de soldadura', 'Procedimiento', 'Procedimientos', 'Producción', 'Interno', '1', '2025-03-10', '2027-03-10', 'jperez@metalcof.co', ''],
       ayuda: 'Los documentos entran como Vigentes (sin archivo: se adjunta al modificarlos). Si dejas el código vacío se genera. tipo, clase y proceso aceptan el nombre o la sigla.',
       preparar(f, ctx) {
         const tipo = buscar(ctx.tipos, f.tipo, ['nombre', 'sigla']); if (!tipo) throw new Error(`tipo: no existe “${f.tipo}”`);
@@ -244,7 +384,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
       titulo: 'Matriz de riesgos',
       columnas: ['proceso', 'tipo', 'nombre', 'causas', 'consecuencias', 'probabilidad', 'impacto', 'tratamiento', 'responsable', 'descripcion'],
       requeridas: ['proceso', 'tipo', 'nombre', 'probabilidad', 'impacto'],
-      ejemplo: ['Producción', 'Calidad', 'Producto no conforme por fallas en soldadura', 'Equipos sin mantenimiento', 'Reprocesos y quejas', '4', '4', 'Reducir', 'produccion', ''],
+      ejemplo: ['Producción', 'Calidad', 'Producto no conforme por fallas en soldadura', 'Equipos sin mantenimiento', 'Reprocesos y quejas', '4', '4', 'Reducir', 'jperez@metalcof.co', ''],
       ayuda: 'probabilidad e impacto de 1 a 5. tratamiento: Reducir, Aceptar, Evitar o Compartir. El código R-PROCESO-nn se genera solo.',
       preparar(f, ctx) {
         const proceso = buscar(ctx.procesos, f.proceso, ['nombre', 'sigla']); if (!proceso) throw new Error(`proceso: no existe “${f.proceso}”`);
@@ -265,7 +405,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
       titulo: 'Controles de riesgos',
       columnas: ['riesgo_codigo', 'descripcion', 'clasificacion', 'efectividad', 'mitiga_probabilidad', 'mitiga_impacto', 'frecuencia', 'documentado', 'responsable_gestion', 'responsable_revision'],
       requeridas: ['riesgo_codigo', 'descripcion', 'clasificacion'],
-      ejemplo: ['R-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 'Fuerte', 'si', 'no', 'Por lote', 'si', 'produccion', 'calidad'],
+      ejemplo: ['R-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 'Fuerte', 'si', 'no', 'Por lote', 'si', 'jperez@metalcof.co', 'mramirez@metalcof.co'],
       ayuda: 'El riesgo debe existir (importa primero la matriz). clasificacion: Preventivo, Detectivo o Correctivo. efectividad: Fuerte, Moderado o Débil. mitiga_*: si/no (al menos uno).',
       preparar(f, ctx) {
         const riesgo = uno('SELECT r.*, p.sigla FROM riesgos r JOIN procesos p ON p.id = r.proceso_id WHERE r.codigo = ? AND r.empresa_id = ? AND r.activo = 1', f.riesgo_codigo, ctx.u.empresa_id);
@@ -355,7 +495,7 @@ module.exports = function (app, { uno, todos, ejecutar, r, falla, transaccion, e
 
     const ctx = { u: req.u, vistos: new Set(), claves: [],
       procesos: todos('SELECT * FROM procesos WHERE empresa_id = ?', req.u.empresa_id), tipos: todos('SELECT * FROM tipos_documento'),
-      clases: todos('SELECT * FROM clases_documento'), usuarios: todos('SELECT id, usuario, nombre FROM usuarios WHERE empresa_id = ? AND activo = 1', req.u.empresa_id) };
+      clases: todos('SELECT * FROM clases_documento'), usuarios: todos('SELECT id, usuario, correo, nombre FROM usuarios WHERE empresa_id = ? AND activo = 1', req.u.empresa_id) };
     const revisadas = filas.map((f, k) => {
       try {
         const vacio = imp.requeridas.find(c => !f[c]);

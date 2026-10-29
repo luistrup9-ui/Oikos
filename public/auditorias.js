@@ -256,7 +256,7 @@ rutas.acciones = async function () {
 
 async function nuevoHallazgo() {
   const ca = await catalogosAud();
-  const procesos = esCalidad() ? cat.procesos : cat.procesos.filter(p => p.id === yo.proceso_id);
+  const procesos = esCalidad() ? cat.procesos : cat.procesos.filter(p => (yo.procesos_propios || [yo.proceso_id]).includes(p.id)); // su proceso y sus subprocesos
   const v = await modal('Registrar hallazgo', `<div class="form">
     <label>Origen<select name="origen">${ca.origenes.filter(o => !['Auditoría interna', 'Autoevaluación'].includes(o)).map(o => `<option>${o}</option>`).join('')}</select></label>
     <label>Tipo<select name="tipo">${TIPOS_HALLAZGO.map(t => `<option>${t}</option>`).join('')}</select></label>
@@ -275,7 +275,7 @@ rutas.hallazgo = async function () {
   const [h] = (await api('/hallazgos')).filter(x => x.id === id);
   if (!h) { vista.innerHTML = '<p class="error">Hallazgo no encontrado</p>'; return; }
   const acciones = (await api('/acciones')).filter(a => a.hallazgo_id === id);
-  const puedeAbrir = esCalidad() || (yo.rol === 'lider_proceso' && yo.proceso_id === h.proceso_id);
+  const puedeAbrir = esCalidad() || (yo.rol === 'lider_proceso' && (yo.procesos_propios || []).includes(h.proceso_id));
   vista.innerHTML = `
     <div class="encabezado"><div><a href="#/acciones?v=hallazgos">← Hallazgos</a>
       <h2 style="margin-top:6px"><span class="mono">${esc(h.codigo)}</span> · ${etiquetaHallazgo(h.tipo)}</h2></div>

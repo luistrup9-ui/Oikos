@@ -17,7 +17,7 @@ function entradas(buf) {
 }
 
 (async () => {
-  const r = await fetch(B + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: 'consulta', clave: 'consulta123' }) });
+  const r = await fetch(B + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario: 'colaborador', clave: 'colaborador123' }) });
   cookie = r.headers.get('set-cookie').split(';')[0];
   const bajar = async q => fetch(B + '/mop/exportar?' + q, { headers: { cookie } });
 

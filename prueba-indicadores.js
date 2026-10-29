@@ -1,5 +1,6 @@
 // Prueba del módulo de indicadores: node prueba-indicadores.js (con el servidor corriendo)
 const B = 'http://localhost:3100/api';
+const CUENTA = { produccion: 'lider', calidad: 'gestor', consulta: 'colaborador' }; // etiqueta de la prueba → cuenta sembrada por rol
 const sesiones = {};
 async function llamar(quien, ruta, cuerpo, metodo) {
   const o = { method: metodo || (cuerpo ? 'POST' : 'GET'), headers: { cookie: sesiones[quien] || '' } };
@@ -13,8 +14,8 @@ let fallos = 0;
 const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALLA') + ' ' + nombre); if (!cond) { fallos++; console.log('      ', JSON.stringify(detalle).slice(0, 400)); } };
 
 (async () => {
-  for (const [u, c] of [['produccion', 'produccion123'], ['calidad', 'calidad123'], ['consulta', 'consulta123']])
-    await llamar(u, '/login', { usuario: u, clave: c });
+  for (const [u, c] of [['produccion', 'lider123'], ['calidad', 'gestor123'], ['consulta', 'colaborador123']])
+    await llamar(u, '/login', { usuario: CUENTA[u] || u, clave: c });
   const anio = new Date().getFullYear();
 
   let lista = await llamar('calidad', '/indicadores?anio=2026');

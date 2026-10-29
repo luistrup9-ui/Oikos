@@ -12,8 +12,8 @@ let fallos = 0;
 const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALLA') + ' ' + nombre); if (!cond) { fallos++; console.log('      ', detalle); } };
 
 (async () => {
-  await llamar('calidad', '/login', { usuario: 'calidad', clave: 'calidad123' });
-  await llamar('consulta', '/login', { usuario: 'consulta', clave: 'consulta123' });
+  await llamar('calidad', '/login', { usuario: 'gestor', clave: 'gestor123' });
+  await llamar('consulta', '/login', { usuario: 'colaborador', clave: 'colaborador123' });
   const marca = 'Zprueba' + Date.now();
 
   let r = await llamar('calidad', '/glosario', { termino: marca, descripcion: 'Término de prueba del glosario', glosario: 'ISO 9001', fuente: 'ISO 9000:2015' });

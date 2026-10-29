@@ -16,10 +16,32 @@
       <h1 class="solo-lector">OIKOS</h1>
       <img class="login-logo" src="oikos/oikos-logo-claro.svg" alt="">
       <p class="sub">Sistema de Gestión Integral</p>
-      <label>Usuario <input name="usuario" autocomplete="username" required></label>
+      <p class="ok-login" id="okLogin" hidden></p>
+      <label>Correo corporativo <input name="usuario" inputmode="email" autocomplete="username" placeholder="nombre@empresa.com" required></label>
       <label>Clave <input name="clave" type="password" autocomplete="current-password" required></label>
       <button class="btn primario">Ingresar</button>
       <p class="error" id="errLogin"></p>
+      <button type="button" class="enlace-login" id="irOlvide">¿Olvidaste tu clave?</button>
+    </form>
+    <!-- Recuperar la clave: se pide con el correo; el enlace que llega abre #/restablecer?t=… -->
+    <form id="formOlvide" class="tarjeta" hidden>
+      <img class="login-logo" src="oikos/oikos-logo-claro.svg" alt="OIKOS">
+      <h2 class="login-titulo">Restablecer la clave</h2>
+      <p class="sub">Escribe el correo corporativo con el que ingresas.</p>
+      <label>Correo corporativo <input name="correo" type="email" autocomplete="email" placeholder="nombre@empresa.com" required></label>
+      <button class="btn primario">Continuar</button>
+      <p class="ok-login" id="okOlvide" hidden></p>
+      <p class="error" id="errOlvide"></p>
+      <button type="button" class="enlace-login" data-volver>Volver a ingresar</button>
+    </form>
+    <form id="formRestablecer" class="tarjeta" hidden>
+      <img class="login-logo" src="oikos/oikos-logo-claro.svg" alt="OIKOS">
+      <h2 class="login-titulo">Elige tu clave nueva</h2>
+      <label>Clave nueva <small>(mínimo 8, con letras y números)</small><input name="nueva" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Repite la clave nueva<input name="repetir" type="password" autocomplete="new-password" required></label>
+      <button class="btn primario">Guardar clave</button>
+      <p class="error" id="errRestablecer"></p>
+      <button type="button" class="enlace-login" data-volver>Volver a ingresar</button>
     </form>
   </div>
 

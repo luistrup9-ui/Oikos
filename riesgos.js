@@ -58,14 +58,14 @@ function sembrar() {
     efectividad, frecuencia, documentado, responsable_gestion_id, responsable_revision_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
   // Ejemplos para ver la matriz funcionando; reemplázalos por la matriz ES-GER-MAT-05 real
   const r1 = insR.run('R-PRO-01', pid('PRO'), 'Calidad', '(Ejemplo) Producto no conforme por fallas en soldadura',
-    'Equipos sin mantenimiento; operarios sin entrenamiento', 'Reprocesos, devoluciones y quejas', 4, 4, uid('produccion')).lastInsertRowid;
-  insC.run(r1, 'C-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 1, 0, 'Fuerte', 'Por lote', 1, uid('produccion'), uid('calidad'));
-  insC.run(r1, 'C-PRO-02', 'Plan de mantenimiento preventivo de soldadoras', 'Preventivo', 1, 0, 'Moderado', 'Mensual', 1, uid('produccion'), uid('calidad'));
+    'Equipos sin mantenimiento; operarios sin entrenamiento', 'Reprocesos, devoluciones y quejas', 4, 4, uid('lider')).lastInsertRowid;
+  insC.run(r1, 'C-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 1, 0, 'Fuerte', 'Por lote', 1, uid('lider'), uid('gestor'));
+  insC.run(r1, 'C-PRO-02', 'Plan de mantenimiento preventivo de soldadoras', 'Preventivo', 1, 0, 'Moderado', 'Mensual', 1, uid('lider'), uid('gestor'));
   const r2 = insR.run('R-ALM-01', pid('ALM'), 'Compras y proveedores', '(Ejemplo) Desabastecimiento de lámina de acero',
-    'Dependencia de un solo proveedor', 'Paradas de producción', 3, 5, uid('calidad')).lastInsertRowid;
-  insC.run(r2, 'C-ALM-01', 'Stock mínimo de seguridad', 'Preventivo', 0, 1, 'Moderado', 'Semanal', 0, uid('calidad'), uid('calidad'));
+    'Dependencia de un solo proveedor', 'Paradas de producción', 3, 5, uid('gestor')).lastInsertRowid;
+  insC.run(r2, 'C-ALM-01', 'Stock mínimo de seguridad', 'Preventivo', 0, 1, 'Moderado', 'Semanal', 0, uid('gestor'), uid('gestor'));
   insR.run('R-GTH-01', pid('GTH'), 'Seguridad y Salud en el Trabajo', '(Ejemplo) Quemaduras en el área de corte',
-    'Falta de EPP', 'Incapacidades y sanciones', 3, 4, uid('calidad'));
+    'Falta de EPP', 'Incapacidades y sanciones', 3, 4, uid('gestor'));
 }
 sembrar();
 

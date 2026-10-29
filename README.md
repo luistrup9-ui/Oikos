@@ -12,27 +12,51 @@ node prueba-flujo.js  # prueba de punta a punta (con el servidor corriendo y la 
 La base `sgi.db` se crea sola con los procesos de Metalcof. Para empezar de cero, borra `sgi.db` y la carpeta `archivos/`.
 
 ## Usuarios de prueba
-| Usuario | Clave | Rol |
-|---|---|---|
-| admin | admin1234 | Administrador |
-| calidad | calidad123 | Líder de Calidad (aprueba, devuelve, publica, resuelve solicitudes) |
-| produccion | produccion123 | Líder de proceso de Producción (elabora y envía a revisión) |
-| consulta | consulta123 | Solo ve documentos vigentes |
+Una base **nueva** en desarrollo trae una cuenta por rol. Se ingresa con el correo (o con el usuario) y la clave:
 
-Estas claves solo existen en una base **nueva**. Cambia las claves antes de usarlo en serio; en una base ya en uso,
-el administrador las define en Administración → Usuarios (Restablecer clave genera una temporal que se cambia en el primer ingreso).
+| Correo | Usuario | Clave | Rol |
+|---|---|---|---|
+| admin@oikos.test | admin | admin123 | Administrador |
+| gestor@oikos.test | gestor | gestor123 | Gestor de Calidad |
+| lider@oikos.test | lider | lider123 | Líder (del proceso Producción) |
+| colaborador@oikos.test | colaborador | colaborador123 | Colaborador |
+
+El dominio `.test` está reservado: esos correos nunca llegan a una bandeja real. Todas piden cambiar la clave al primer ingreso.
+En modo producción (`NODE_ENV=production`) no se crean cuentas de prueba, solo un administrador con la clave de
+`ADMIN_CLAVE_INICIAL` (o una al azar que sale en el registro) y, si se define, el correo de `ADMIN_CORREO`.
+**No anotes aquí las claves de una base en uso**: este archivo va al repositorio.
 
 ## Roles y alcance
 | Rol | Qué ve | Qué puede hacer |
 |---|---|---|
-| Administrador | Todo | Todo lo de Calidad, más crear usuarios, **crear procesos y subprocesos** y **asignar quién lidera cada proceso** (Administración → Procesos) |
-| Líder de Calidad | Todo | Aprobar, devolver y publicar documentos, editar la ficha de cualquier proceso, gestionar indicadores, riesgos, evaluaciones y mecanismos |
-| Líder de proceso | El mapa y la ficha de **todos** los procesos, y los documentos vigentes, registros y glosario de todos. De **su proceso** (y sus subprocesos): borradores, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones, estadísticas y cuadro de mando. Mecanismos, actas y compromisos: solo aquellos de los que hace parte | Gestionar lo de su proceso y editar el contenido de su ficha (el nombre, el código y el tipo los define Calidad). No edita otros procesos |
-| Consulta | Solo lectura de los documentos vigentes, registros, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones y cuadro de mando de todos los procesos; no ve solicitudes, mecanismos, actas ni compromisos | Solo lectura |
+| Administrador | Todo | Todo lo del Gestor de Calidad, más **crear y editar usuarios** (correo, rol, proceso, clave), **crear procesos y subprocesos** y **asignar quién lidera cada proceso** (Administración → Usuarios y → Procesos) |
+| Gestor de Calidad | Todo | Aprobar, devolver y publicar documentos, editar la ficha de cualquier proceso, gestionar indicadores, riesgos, evaluaciones y mecanismos |
+| Líder | El mapa y la ficha de **todos** los procesos, y los documentos vigentes, registros y glosario de todos. De **los procesos y subprocesos que tenga marcados**: borradores, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones, estadísticas y cuadro de mando. Mecanismos, actas y compromisos: solo aquellos de los que hace parte | Gestionar lo de sus procesos y editar el contenido de sus fichas (el nombre, el código y el tipo los define Calidad). No edita otros procesos |
+| Colaborador | Consulta los documentos vigentes, registros, indicadores, riesgos y controles, evaluaciones, hallazgos, acciones y cuadro de mando; no ve solicitudes, ni los mecanismos, actas y compromisos de los que no hace parte | Solo consulta |
 
-- Cada persona lidera **un** proceso; un proceso puede tener varios líderes. Al asignar o quitar un líder se cierran sus sesiones para que tome los permisos nuevos.
+- El rol Líder se le da a cada persona según su cargo. En Usuarios → Editar se le marcan los **procesos y subprocesos** que lidera, en una lista donde cada proceso despliega los suyos; al marcar un proceso se marcan sus subprocesos y se pueden desmarcar uno por uno. Un subproceso creado después no entra solo.
+- Una persona puede liderar varios procesos y un proceso puede tener varios líderes (tabla `usuario_procesos`). En Administración → Procesos, «Asignar líder» suma ese proceso (con sus subprocesos) y la × quita solo ese; quien se queda sin procesos pasa a Colaborador.
 - «Hace parte» de un mecanismo = integrante, coordinador, convocado a un acta o responsable de un compromiso.
+- En la base los roles conservan sus claves internas (`admin`, `lider_calidad`, `lider_proceso`, `consulta`); solo cambiaron los nombres que se ven.
 - Las reglas de alcance están en `alcance.js` (`propios`, `lidera`, `ve`, `filtro`); los módulos del servidor las reutilizan.
+
+## Cargos
+- Administración → **Cargos**: la estructura de cargos (como «Cargos» de Almera) con código OIKOS `CAR-<sigla del área>-<número>` (ej. `CAR-GPR-27` = Operario), área, jefe inmediato (otro cargo) y personas.
+- Se crean, editan (incluido activar/desactivar) y se asignan personas con «Personas». Si cambia quien ocupa un cargo, se reasigna ahí: el código, el área y el jefe se conservan. Una persona ocupa un cargo.
+- La primera vez se cargan solos los 48 cargos de Metalcof tomados de Almera, con sus jefes, y se asignan las personas que ya son usuarios por su nombre (`cargos.js`). El cargo «Responsable del proceso de servicios generales» no tenía número en Almera: quedó `CAR-MTC-47`.
+- En Usuarios → Editar el cargo se elige de la lista; quien tenía un cargo escrito a mano lo conserva hasta que se le elija uno.
+
+## Ingreso con correo y recuperación de la clave
+- Cada persona ingresa con su **correo corporativo** (el usuario interno, que se deduce del correo, también sirve). El correo es único.
+- El administrador crea y edita usuarios en Administración → Usuarios. Para cargar correos a usuarios ya creados:
+  «Completar correos» (asigna `usuario@dominio` a quien no tiene) o Importar datos → «Correos de usuarios que ya existen».
+- **Restablecer clave** (administrador): genera una clave temporal que se entrega una vez y se cambia al primer ingreso.
+- **¿Olvidaste tu clave?** (en la pantalla de ingreso):
+  - Con correo configurado, llega un enlace de un solo uso que vale 60 minutos. Variables: `SMTP_HOST`, `SMTP_PORT` (587; 465 = conexión segura),
+    `SMTP_USER`, `SMTP_PASS` (en Gmail o Microsoft 365 suele ser una «contraseña de aplicación»), `SMTP_FROM` y `APP_URL`
+    (dirección con la que se abre OIKOS, p. ej. `http://servidor/OIKOS`). Ver `correo.js`.
+  - Sin correo configurado, la petición le aparece al administrador en Usuarios («Pidió restablecer su clave») y él entrega una temporal.
+  - La respuesta es la misma exista o no el correo, y hay límite de pedidos por hora.
 
 ## Qué incluye
 - **Mi plan de trabajo**: transiciones pendientes, solicitudes por resolver y documentos por vencer.
@@ -57,7 +81,7 @@ el administrador las define en Administración → Usuarios (Restablecer clave g
   En los indicadores descendentes la regla se invierte.
 - **Seguimiento** (`#/seguimiento`): árbol Categoría → Proceso → Indicador con medición previa, último valor y meta, como el "Seguimiento MOP" de Almera.
   Se exporta a CSV o se imprime a PDF.
-- **Permisos**: Calidad crea y edita indicadores y objetivos. Mide el responsable del indicador o el líder del proceso. Consulta solo ve.
+- **Permisos**: Calidad crea y edita indicadores y objetivos. Mide el responsable del indicador o el Líder del proceso. El Colaborador solo consulta.
 - **Mi plan de trabajo** muestra también las mediciones atrasadas.
 - **Datos iniciales**: los 15 indicadores que Metalcof tiene en Almera, con las mediciones 2026 de agua y energía tomadas de allí.
   Las fórmulas son de referencia; ajústalas.
@@ -82,7 +106,7 @@ Pruebas: `node prueba-indicadores.js` (servidor corriendo y base limpia).
 - **Controles** (`#/controles`): listado de todos los controles con filtros por proceso, clasificación y responsable. Exporta a CSV.
 - **Permisos**:
   - Calidad: todo.
-  - Líder de proceso: los riesgos y controles de su proceso.
+  - Líder: los riesgos y controles de su proceso y sus subprocesos.
   - Responsable de un control: puede reportar su ejecución.
   - Consulta: solo ve.
 - **Datos iniciales**: 3 riesgos marcados "(Ejemplo)". Reemplázalos por los de la matriz ES-GER-MAT-05 real.
@@ -120,7 +144,7 @@ Pruebas: `node prueba-auditorias.js` (servidor corriendo y base limpia).
 - **Mi clave** (botón de la barra superior): mínimo 8 caracteres, con letras y números.
 - **Seguridad del ingreso**: 5 intentos fallidos bloquean ese usuario durante 15 minutos.
 - **Importar datos** (Calidad y administrador), desde CSV (guarda tu Excel como CSV):
-  - Tipos: usuarios (solo administrador), documentos del listado maestro, riesgos, controles y mediciones históricas de indicadores.
+  - Tipos: usuarios y correos de usuarios existentes (solo administrador; un Líder importado queda con su proceso y los subprocesos de ese proceso), documentos del listado maestro, riesgos, controles y mediciones históricas de indicadores.
   - El archivo se revisa fila por fila y solo se importa si **todas** las filas son válidas.
   - Cada tipo tiene su plantilla descargable.
   - Aceptan coma decimal, fechas AAAA-MM-DD o DD/MM/AAAA, y nombre o sigla de proceso, tipo y clase.
@@ -181,4 +205,4 @@ restauración, actualización y lista de seguridad.
   Restaurar: `node restaurar.js <copia>.tar.gz` con el sistema apagado.
 - `/healthz` responde sin sesión, para monitoreo.
 
-Pruebas: `node prueba-produccion.js` (no toca tus datos: usa carpetas temporales y sus propios servidores).
+Pruebas: `node prueba-produccion.js` y `node prueba-recuperar-clave.js` (no tocan tus datos: usan carpetas temporales, sus propios servidores y, la segunda, un servidor de correo falso).

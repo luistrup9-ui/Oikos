@@ -1,6 +1,7 @@
 // Prueba de la ficha de procesos: node prueba-procesos.js (servidor corriendo, después de importar desde Almera).
 // Solo lee y prueba validaciones: no modifica ninguna ficha.
 const B = 'http://localhost:3100/api';
+const CUENTA = { produccion: 'lider', calidad: 'gestor', consulta: 'colaborador' }; // etiqueta de la prueba → cuenta sembrada por rol
 const sesiones = {};
 async function llamar(quien, ruta, cuerpo, metodo) {
   const o = { method: metodo || (cuerpo ? 'POST' : 'GET'), headers: { cookie: sesiones[quien] || '' } };
@@ -14,7 +15,7 @@ let fallos = 0;
 const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALLA') + ' ' + nombre); if (!cond) { fallos++; console.log('      ', JSON.stringify(detalle)?.slice(0, 300)); } };
 
 (async () => {
-  for (const u of ['calidad', 'consulta']) await llamar(u, '/login', { usuario: u, clave: u + '123' });
+  for (const u of ['calidad', 'consulta']) await llamar(u, '/login', { usuario: CUENTA[u], clave: CUENTA[u] + '123' });
   const cat = await llamar('consulta', '/catalogos');
   const p = n => cat.procesos.find(x => x.nombre === n);
 

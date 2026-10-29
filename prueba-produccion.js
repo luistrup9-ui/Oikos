@@ -46,7 +46,7 @@ async function http(srv, ruta, { metodo, cuerpo, cookie, cabeceras } = {}) {
     r = await http(A, '/healthz', { cabeceras: { 'X-Forwarded-Proto': 'https' } });
     esperar('Con HTTPS (vía proxy) envía HSTS', /max-age=31536000/.test(r.h.get('strict-transport-security') || ''), r.h.get('strict-transport-security'));
 
-    r = await http(A, '/api/login', { cuerpo: { usuario: 'calidad', clave: 'calidad123' } });
+    r = await http(A, '/api/login', { cuerpo: { usuario: 'gestor', clave: 'gestor123' } });
     esperar('No existen los usuarios de prueba', r.status === 401, r.json);
     r = await http(A, '/api/login', { cuerpo: { usuario: 'admin', clave: 'admin123' } });
     esperar('Ni la clave de prueba de admin', r.status === 401, r.json);
@@ -70,7 +70,7 @@ async function http(srv, ruta, { metodo, cuerpo, cookie, cabeceras } = {}) {
     esperar('Y los 16 procesos', r.json.procesos.length === 16, r.json.procesos?.length);
 
     // ---- Datos que deben sobrevivir a la restauración ----
-    r = await http(A, '/api/usuarios', { cookie: admin, cuerpo: { usuario: 'ana', nombre: 'Ana Ruiz', rol: 'consulta', clave: 'ClaveAna2026' } });
+    r = await http(A, '/api/usuarios', { cookie: admin, cuerpo: { usuario: 'ana', correo: 'ana@oikos.test', nombre: 'Ana Ruiz', rol: 'consulta', clave: 'ClaveAna2026' } });
     const pid = (await http(A, '/api/catalogos', { cookie: admin })).json.procesos.find(p => p.sigla === 'PRO').id;
     r = await http(A, '/api/documentos', { cookie: admin, cuerpo: { nombre: 'Procedimiento de prueba', tipo_id: 3, clase_id: 10, proceso_id: pid } });
     const docId = r.json.id;
@@ -93,7 +93,7 @@ async function http(srv, ruta, { metodo, cuerpo, cookie, cabeceras } = {}) {
     esperar('No deja salir de la carpeta de copias', r.status === 400 || r.status === 404, r.status);
 
     // Cambios posteriores al respaldo: no deben aparecer al restaurar
-    await http(A, '/api/usuarios', { cookie: admin, cuerpo: { usuario: 'despues', nombre: 'Creado después', rol: 'consulta', clave: 'ClaveDespues26' } });
+    await http(A, '/api/usuarios', { cookie: admin, cuerpo: { usuario: 'despues', correo: 'despues@oikos.test', nombre: 'Creado después', rol: 'consulta', clave: 'ClaveDespues26' } });
 
     // Retención: BACKUP_KEEP=2, hacen falta nombres distintos (segundos)
     await dormir(1100); await http(A, '/api/respaldos', { cookie: admin, metodo: 'POST' });
@@ -121,7 +121,7 @@ async function http(srv, ruta, { metodo, cuerpo, cookie, cabeceras } = {}) {
     await B.listo();
     const cb = (await http(B, '/api/login', { cuerpo: { usuario: 'admin', clave: 'Inicial2026ab' } })).cookie;
     const copiaB = (await http(B, '/api/respaldos', { cookie: cb, metodo: 'POST' })).json.nombre;
-    await http(B, '/api/usuarios', { cookie: cb, cuerpo: { usuario: 'tarde', nombre: 'Tarde', rol: 'consulta', clave: 'ClaveTarde2026' } });
+    await http(B, '/api/usuarios', { cookie: cb, cuerpo: { usuario: 'tarde', correo: 'tarde@oikos.test', nombre: 'Tarde', rol: 'consulta', clave: 'ClaveTarde2026' } });
     await B.parar();
     const dB = dir('restauradoB');
     x = spawnSync(process.execPath, [path.join(__dirname, 'restaurar.js'), path.join(raiz, 'copiasB', copiaB)], { env: { ...process.env, DATA_DIR: dB }, encoding: 'utf8' });

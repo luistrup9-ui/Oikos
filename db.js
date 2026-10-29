@@ -68,8 +68,17 @@ CREATE TABLE IF NOT EXISTS registros (
 `);
 
 // Columnas añadidas después de la primera versión
-for (const [col, def] of [['activo', 'INTEGER NOT NULL DEFAULT 1'], ['debe_cambiar', 'INTEGER NOT NULL DEFAULT 0']])
+for (const [col, def] of [['activo', 'INTEGER NOT NULL DEFAULT 1'], ['debe_cambiar', 'INTEGER NOT NULL DEFAULT 0'],
+  ['correo', 'TEXT'], ['reinicio_solicitado', 'TEXT']]) // correo = con qué ingresa la persona; reinicio_solicitado = pidió restablecer su clave y espera al administrador
   if (!db.prepare('PRAGMA table_info(usuarios)').all().some(c => c.name === col)) db.exec(`ALTER TABLE usuarios ADD COLUMN ${col} ${def}`);
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_correo ON usuarios(correo);
+CREATE TABLE IF NOT EXISTS reinicios_clave (id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  token_hash TEXT NOT NULL UNIQUE, creado TEXT NOT NULL, vence TEXT NOT NULL, usado TEXT);`);
+
+// Los nombres de los roles cambiaron (Líder de Calidad → Gestor de Calidad, Líder de proceso → Líder); se ajustan los estados del flujo solo si nadie los editó
+db.prepare("UPDATE estados SET nombre = ? WHERE id = 'ELABORACION' AND nombre = ?").run('Elaboración / Modificación (Líder)', 'Elaboración / Modificación (Líder de proceso)');
+db.prepare("UPDATE estados SET nombre = ? WHERE id = 'REVISION' AND nombre = ?").run('Revisión por Gestor de Calidad', 'Revisión por Líder de Calidad');
 
 function hash(clave) {
   const sal = crypto.randomBytes(16).toString('hex');
@@ -108,7 +117,7 @@ function sembrar() {
     .forEach(c => insC.run(...c));
 
   const insE = db.prepare('INSERT INTO estados (id, nombre, orden) VALUES (?,?,?)');
-  [['ELABORACION', 'Elaboración / Modificación (Líder de proceso)', 1], ['REVISION', 'Revisión por Líder de Calidad', 2],
+  [['ELABORACION', 'Elaboración / Modificación (Líder)', 1], ['REVISION', 'Revisión por Gestor de Calidad', 2],
    ['PUBLICACION', 'Publicación', 3], ['VIGENTE', 'Vigente', 4], ['ELIMINADO', 'Eliminado', 5]]
     .forEach(e => insE.run(...e));
   const insTr = db.prepare('INSERT INTO transiciones (id, nombre, desde, hacia, roles, nueva_version) VALUES (?,?,?,?,?,?)');
@@ -121,7 +130,7 @@ function sembrar() {
     .forEach(t => insTr.run(...t));
 
   const pid = s => db.prepare('SELECT id FROM procesos WHERE sigla=?').get(s).id;
-  const insU = db.prepare('INSERT INTO usuarios (empresa_id, usuario, nombre, cargo, rol, proceso_id, clave) VALUES (1,?,?,?,?,?,?)');
+  const insU = db.prepare('INSERT INTO usuarios (empresa_id, usuario, nombre, cargo, rol, proceso_id, clave, correo) VALUES (1,?,?,?,?,?,?,?)');
   if (PRODUCCION) {
     // Sin usuarios de prueba: un solo administrador con clave temporal (la de ADMIN_CLAVE_INICIAL o una al azar en el log)
     const a = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -129,23 +138,29 @@ function sembrar() {
     if (!clave) {
       generada = true;
       do clave = Array.from(crypto.randomBytes(14), b => a[b % a.length]).join('');
-      while (!/[a-zA-Z]/.test(clave) || !/d/.test(clave));
+      while (!/[a-zA-Z]/.test(clave) || !/\d/.test(clave));
     }
-    insU.run('admin', 'Administrador', 'Administrador del sistema', 'admin', null, hash(clave));
+    const correoAdmin = String(process.env.ADMIN_CORREO || '').trim().toLowerCase() || null; // con ADMIN_CORREO el primer administrador ya ingresa con su correo
+    insU.run('admin', 'Administrador', 'Administrador del sistema', 'admin', null, hash(clave), correoAdmin);
     db.exec('UPDATE usuarios SET debe_cambiar = 1');
     console.log('==================================================');
     console.log(' Primer arranque: usuario administrador creado.');
-    console.log(' Usuario: admin');
+    console.log(' Usuario: ' + (correoAdmin || 'admin'));
     console.log(generada ? ' Clave temporal: ' + clave + '   (guárdala; se pide cambiarla al entrar)' : ' Clave: la de ADMIN_CLAVE_INICIAL (se pide cambiarla al entrar)');
     console.log('==================================================');
     return;
   }
-  insU.run('admin', 'Administrador', 'Administrador del sistema', 'admin', null, hash('admin123'));
-  insU.run('calidad', 'Líder de Calidad', 'Coordinador de Calidad', 'lider_calidad', pid('SIG'), hash('calidad123'));
-  insU.run('produccion', 'Líder de Producción', 'Jefe de Producción', 'lider_proceso', pid('PRO'), hash('produccion123'));
-  insU.run('consulta', 'Usuario de consulta', 'Auxiliar', 'consulta', null, hash('consulta123'));
+  // Un usuario de prueba por rol (correos del dominio reservado .test: nunca llegan a una bandeja real)
+  insU.run('admin', 'Administrador', 'Administrador del sistema', 'admin', null, hash('admin123'), 'admin@oikos.test');
+  insU.run('gestor', 'Gestor de Calidad', 'Coordinador de Calidad', 'lider_calidad', pid('SIG'), hash('gestor123'), 'gestor@oikos.test');
+  insU.run('lider', 'Líder de Producción', 'Jefe de Producción', 'lider_proceso', pid('PRO'), hash('lider123'), 'lider@oikos.test');
+  insU.run('colaborador', 'Colaborador', 'Auxiliar', 'consulta', null, hash('colaborador123'), 'colaborador@oikos.test');
   db.exec('UPDATE usuarios SET debe_cambiar = 1'); // las claves de prueba se cambian al entrar
 }
 sembrar();
+
+// Procesos que lidera cada Líder: se eligen uno por uno (procesos y subprocesos). usuarios.proceso_id queda como su proceso principal.
+db.exec(`CREATE TABLE IF NOT EXISTS usuario_procesos (usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  proceso_id INTEGER NOT NULL REFERENCES procesos(id), PRIMARY KEY (usuario_id, proceso_id))`);
 
 module.exports = { db, hash, verificar, DATA_DIR, PRODUCCION };

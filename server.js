@@ -58,9 +58,9 @@ function token(req) {
   return m && m[1];
 }
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login') return next();
+  if (['/login', '/olvide', '/restablecer'].includes(req.path)) return next(); // lo único que se usa sin sesión: entrar y recuperar la clave
   const t = token(req);
-  const u = t && uno(`SELECT u.id, u.usuario, u.nombre, u.cargo, u.rol, u.proceso_id, u.empresa_id, u.debe_cambiar
+  const u = t && uno(`SELECT u.id, u.usuario, u.correo, u.nombre, u.cargo, u.rol, u.proceso_id, u.empresa_id, u.debe_cambiar
     FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ? AND u.activo = 1
       AND s.creada > datetime('now', ?)`, t, `-${SESION_SEGUNDOS} seconds`);
   if (!u) return res.status(401).json({ error: 'Sesión no válida' });
@@ -71,13 +71,14 @@ const alcance = require('./alcance')({ todos });
 
 const intentos = new Map(); // usuario -> { n, hasta }: bloqueo tras 5 fallos
 app.post('/api/login', r((req, res) => {
-  const nombre = String(req.body.usuario || '').trim().toLowerCase();
+  // Se ingresa con el correo corporativo (o con el usuario de siempre); el campo del formulario se sigue llamando «usuario»
+  const nombre = String(req.body.usuario || req.body.correo || '').trim().toLowerCase();
   const reg = intentos.get(nombre), vigente = reg && Date.now() < reg.hasta;
   if (vigente && reg.n >= 5) falla(429, 'Demasiados intentos fallidos. Espera 15 minutos.');
-  const u = uno('SELECT * FROM usuarios WHERE usuario = ?', nombre);
+  const u = uno(nombre.includes('@') ? 'SELECT * FROM usuarios WHERE correo = ?' : 'SELECT * FROM usuarios WHERE usuario = ?', nombre);
   if (!u || !u.activo || !verificar(String(req.body.clave || ''), u.clave)) {
     intentos.set(nombre, { n: (vigente ? reg.n : 0) + 1, hasta: Date.now() + 15 * 60 * 1000 });
-    falla(401, 'Usuario o clave incorrectos');
+    falla(401, 'Correo o clave incorrectos');
   }
   intentos.delete(nombre);
   const t = crypto.randomBytes(24).toString('hex');
@@ -90,7 +91,9 @@ app.post('/api/logout', r((req, res) => {
   res.setHeader('Set-Cookie', cookieSesion(req, '', 0));
   return { ok: true };
 }));
-app.get('/api/yo', r(req => ({ ...req.u, empresa: uno('SELECT nombre FROM empresas WHERE id = ?', req.u.empresa_id)?.nombre })));
+// procesos_propios: los procesos que lidera (con sus subprocesos); null si no tiene restricción
+app.get('/api/yo', r(req => ({ ...req.u, empresa: uno('SELECT nombre FROM empresas WHERE id = ?', req.u.empresa_id)?.nombre,
+  procesos_propios: alcance.propios(req.u) })));
 
 app.get('/api/catalogos', r(req => ({
   procesos: todos('SELECT * FROM procesos WHERE empresa_id = ? ORDER BY orden', req.u.empresa_id),
@@ -375,6 +378,7 @@ require('./glosario')(app, { alcance, uno, todos, ejecutar, r, falla, esCalidad,
 require('./procesos')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora });
 require('./mecanismos')(app, { alcance, uno, todos, ejecutar, r, falla, transaccion, esCalidad, ahora, subida, DIR_ARCHIVOS });
 require('./calendario')(app, { alcance, todos, falla, r });
+require('./cargos')(app, { uno, todos, ejecutar, r, falla, transaccion });
 
 const PUERTO = process.env.PORT || 3100;
 const servidor = app.listen(PUERTO, process.env.HOST, () => console.log(`SGI listo en http://localhost:${PUERTO}`));

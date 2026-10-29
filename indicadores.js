@@ -84,7 +84,7 @@ function sembrar() {
    ['Aprendizaje y crecimiento', [['OE6', 'Desarrollar las competencias del personal']]]]
     .forEach(([per, objs], i) => {
       const p = insPer.run(plan, per, i).lastInsertRowid;
-      objs.forEach(([c, n]) => { obj[c] = insObj.run(p, c, n, uid('calidad')).lastInsertRowid; });
+      objs.forEach(([c, n]) => { obj[c] = insObj.run(p, c, n, uid('gestor')).lastInsertRowid; });
     });
 
   const ins = db.prepare(`INSERT INTO indicadores (empresa_id, proceso_id, objetivo_id, codigo, nombre, proposito, formula, calculo, unidad,
@@ -113,12 +113,12 @@ function sembrar() {
   const ids = {};
   for (const [proc, o, cod, nombre, formula, calculo, unidad, frec, sentido, meta] of defs)
     ids[cod] = ins.run(pid(proc), obj[o], cod, nombre, null, formula, calculo, unidad, frec, sentido, meta, TOLERANCIAS[cod] ?? 10,
-      uid(proc === 'PRO' ? 'produccion' : 'calidad')).lastInsertRowid;
+      uid(proc === 'PRO' ? 'lider' : 'gestor')).lastInsertRowid;
 
   // Mediciones 2026 tomadas de Almera (reporte Seguimiento MOP)
   const med = db.prepare('INSERT INTO mediciones (indicador_id, anio, periodo, valor, meta, usuario_id) VALUES (?, 2026, ?, ?, ?, ?)');
-  [-40.26, -29.87, 4.84, -7.32, -18.92].forEach((v, i) => med.run(ids['IND-SIG-03'], i + 1, v, 90, uid('calidad')));
-  [74.10, 59.97, 137.88, 30.30, 115.07, 16.91].forEach((v, i) => med.run(ids['IND-SIG-04'], i + 1, v, 90, uid('calidad')));
+  [-40.26, -29.87, 4.84, -7.32, -18.92].forEach((v, i) => med.run(ids['IND-SIG-03'], i + 1, v, 90, uid('gestor')));
+  [74.10, 59.97, 137.88, 30.30, 115.07, 16.91].forEach((v, i) => med.run(ids['IND-SIG-04'], i + 1, v, 90, uid('gestor')));
 }
 sembrar();
 
