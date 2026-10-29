@@ -305,7 +305,7 @@ rutas.seguimiento = async function () {
       <option value="xlsx">XLSX</option><option value="csv">CSV</option></select></td></tr></table>`, { aceptar: 'Exportar' });
     if (!v) return;
     const a = document.createElement('a');
-    a.href = '/api/mop/exportar?' + qs({ anio, formato: v.formato }); a.download = ''; a.click();
+    a.href = 'api/mop/exportar?' + qs({ anio, formato: v.formato }); a.download = ''; a.click();
   });
 };
 

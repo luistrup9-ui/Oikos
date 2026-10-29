@@ -49,7 +49,8 @@ const mostrarClave = (titulo, quien, clave) => modal(titulo, `<p>Entrégale esta
   <input readonly value="${esc(clave)}" class="mono" style="font-size:18px" onfocus="this.select()">`, { aceptar: 'Listo' });
 
 async function pestanaUsuarios() {
-  const [lista, cargos] = await Promise.all([api('/usuarios'), api('/cargos')]);
+  // Si el servidor aún no tiene cargos (no se reinició tras actualizar), la pestaña sigue funcionando y lo avisa
+  const [lista, cargos] = await Promise.all([api('/usuarios'), api('/cargos').catch(() => { aviso('El servidor no tiene el módulo de cargos: reinícialo (npm start) tras actualizar', true); return []; })]);
   // Líder: lista de casillas; cada proceso despliega sus subprocesos y se marcan uno por uno. Los demás roles: un proceso de referencia (opcional).
   const CATS = ['Estratégico', 'Misional', 'Apoyo'];
   const hijosDe = id => cat.procesos.filter(h => h.padre_id === id);
@@ -278,7 +279,7 @@ async function pestanaImportar() {
   const actual = () => tipos.find(t => t.id === $('#tipo').value);
   const pintarTipo = () => {
     $('#ayuda').innerHTML = `<b>Columnas:</b> ${actual().columnas.map(c => actual().requeridas.includes(c) ? `<b>${c}*</b>` : c).join(', ')}<br>${esc(actual().ayuda)}`;
-    $('#plantilla').href = `/api/importar/${$('#tipo').value}/plantilla`;
+    $('#plantilla').href = `api/importar/${$('#tipo').value}/plantilla`;
     $('#resultado').innerHTML = ''; $('#importar').hidden = true;
   };
   $('#tipo').onchange = pintarTipo; pintarTipo();
@@ -320,7 +321,7 @@ async function pestanaRespaldos() {
       Si el servidor se pierde, las copias que están en él se pierden con él.</p></div>
     ${r.archivos.length ? `<div class="tabla-wrap"><table><thead><tr><th>Copia</th><th>Fecha</th><th class="num">Tamaño</th><th></th></tr></thead><tbody>
       ${r.archivos.map(x => `<tr><td class="mono">${esc(x.nombre)}</td><td>${esc(new Date(x.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }))}</td><td class="num">${peso(x.bytes)}</td>
-        <td><a class="btn chico" href="/api/respaldos/${encodeURIComponent(x.nombre)}" download>Descargar</a></td></tr>`).join('')}</tbody></table></div>`
+        <td><a class="btn chico" href="api/respaldos/${encodeURIComponent(x.nombre)}" download>Descargar</a></td></tr>`).join('')}</tbody></table></div>`
       : '<p class="vacio">Aún no hay copias. Pulsa “Respaldar ahora”.</p>'}`;
   $('#ahora').onclick = intentar(async () => {
     $('#ahora').disabled = true;

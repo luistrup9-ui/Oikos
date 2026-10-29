@@ -26,9 +26,12 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const INICIO = new Date().toISOString();
 // Chequeo de salud para Docker y monitoreo (sin sesión)
 app.get('/healthz', (req, res) => {
-  try { db.prepare('SELECT 1').get(); res.json({ ok: true }); } catch { res.status(500).json({ ok: false }); }
+  // «modulos» deja ver si el servidor que responde es la versión al día (si falta uno, no se reinició tras actualizar)
+  try { db.prepare('SELECT 1').get(); res.json({ ok: true, node: process.version, modulos: ['alcance', 'calendario', 'cargos', 'correo'], iniciado: INICIO }); }
+  catch { res.status(500).json({ ok: false }); }
 });
 
 // node:sqlite no acepta undefined: se convierte a NULL
@@ -382,6 +385,11 @@ require('./cargos')(app, { uno, todos, ejecutar, r, falla, transaccion });
 
 const PUERTO = process.env.PORT || 3100;
 const servidor = app.listen(PUERTO, process.env.HOST, () => console.log(`SGI listo en http://localhost:${PUERTO}`));
+servidor.on('error', e => { // típico: quedó corriendo una versión anterior y sigue respondiendo ella
+  if (e.code === 'EADDRINUSE') console.error(`El puerto ${PUERTO} ya está en uso: probablemente sigue abierta una versión anterior de OIKOS. Ciérrala (Ctrl+C en su ventana o Administrador de tareas → node.exe) y vuelve a ejecutar npm start.`);
+  else console.error(e);
+  process.exit(1);
+});
 
 // Mantenimiento: limpia sesiones vencidas y programa el respaldo diario
 const limpiarSesiones = () => ejecutar("DELETE FROM sesiones WHERE creada < datetime('now', ?)", `-${SESION_SEGUNDOS} seconds`);

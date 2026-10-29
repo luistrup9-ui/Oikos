@@ -1,15 +1,6 @@
-# OIKOS es una app Node (puerto 3100). Apache la presenta en http://localhost/OIKOS/ haciendo de intermediario:
-# nada del proyecto se sirve desde el disco (sgi.db, backups, .git, código del servidor...); todo pasa por Node,
-# que solo entrega public/ y /api. Usa mod_proxy y mod_proxy_http (activos en XAMPP).
-# Las llamadas a /api de la app van con ruta absoluta; las atiende ../.htaccess (C:\xampp\htdocs\.htaccess).
+# OIKOS en Apache (XAMPP): todo se sirve desde public/. Las pantallas son archivos estáticos y /api la atiende PHP
+# (public/api/index.php), que guarda en MySQL. En cPanel, la raíz del subdominio apunta directo a public/ y este archivo no se usa.
 Options -Indexes
-# Sin esto, Apache serviría index.html en /OIKOS/ en vez de pasar la petición a Node.
-DirectoryIndex disabled
-
-# Si Node está apagado Apache responde 503 y se muestra index.html, que espera y entra solo cuando Node arranca.
-ErrorDocument 503 /OIKOS/index.html
-
 RewriteEngine On
-# index.html es la sala de espera y la sirve Apache; el resto va a Node.
-RewriteRule ^index\.html$ - [L]
-RewriteRule ^(.*)$ http://127.0.0.1:3100/$1 [P,L]
+RewriteCond %{REQUEST_URI} !/public/
+RewriteRule ^(.*)$ public/$1 [L]

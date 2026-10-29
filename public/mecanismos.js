@@ -45,7 +45,7 @@ rutas.mecanismos = async function () {
       $('#expActas').onclick = intentar(async () => {
         const v = await modal('Exportar', `<table class="tblform"><tr><th>Formato</th><td><select name="formato"><option value="xlsx">XLSX</option>
           <option value="csv">CSV</option></select></td></tr></table>`, { aceptar: 'Exportar' });
-        if (v) descargar('/api/actas-exportar?' + qs({ desde: f.desde, hasta: f.hasta, formato: v.formato }));
+        if (v) descargar('api/actas-exportar?' + qs({ desde: f.desde, hasta: f.hasta, formato: v.formato }));
       });
       return;
     }
@@ -169,7 +169,7 @@ rutas.mecanismo = async function (id) {
   $('#editarMec')?.addEventListener('click', () => editarMecanismo(m));
   $('#nuevaActa')?.addEventListener('click', () => editarActa(null, m));
   $('#anioActas')?.addEventListener('change', e => location.hash = `${base}?t=actas&anio=${e.target.value}`);
-  $('#expActas')?.addEventListener('click', () => descargar('/api/actas-exportar?' + qs({ mecanismo: m.id, formato: 'xlsx' })));
+  $('#expActas')?.addEventListener('click', () => descargar('api/actas-exportar?' + qs({ mecanismo: m.id, formato: 'xlsx' })));
   if (t === 'seguimiento') {
     const cargar = intentar(async () => {
       const lista = await api('/compromisos?' + qs({ ...valoresForm($('#filtroComp')), mecanismo: m.id }));
@@ -225,7 +225,7 @@ rutas.acta = async function (id) {
   const mec = a.mecanismo, p = a.permisos, base = `#/acta/${id}`;
   const archivos = parte => {
     const l = a.archivos.filter(f => f.parte === parte);
-    return `<div class="archivos">${l.length ? l.map(f => `<div class="archivo"><a href="/api/actas/${a.id}/archivos/${f.id}" download>📄 ${esc(f.nombre)}</a>
+    return `<div class="archivos">${l.length ? l.map(f => `<div class="archivo"><a href="api/actas/${a.id}/archivos/${f.id}" download>📄 ${esc(f.nombre)}</a>
       <span class="gris">${esc(f.usuario || '')} — ${(f.tamano / 1024).toFixed(2)} KB · ${esc(String(f.fecha).slice(0, 16))}</span>
       ${p.editar ? `<button class="btn chico peligro" data-quitar="${f.id}">Quitar</button>` : ''}</div>`).join('') : '<p class="gris">Sin archivos adjuntos.</p>'}
       ${p.editar ? `<label class="btn chico subir">Adjuntar archivo<input type="file" data-parte="${parte}" hidden></label>` : ''}</div>`;
@@ -326,7 +326,7 @@ rutas.compromiso = async function (id) {
         ${c.reprogramaciones.map(r => `<tr><td>${esc(String(r.registrado).slice(0, 10))}</td><td>${esc(r.fecha_anterior)}</td><td>${esc(r.fecha_nueva)}</td>
           <td>${esc(r.causa)}</td><td>${esc(r.usuario || '')}</td></tr>`).join('')}</tbody></table>` : ''}`
     : `${c.seguimientos.length ? c.seguimientos.map(s => `<div class="seguimiento"><b>Avance ${pct(s.avance)}</b> · ${fechaLarga(s.fecha)} / ${esc(s.usuario || '')} - (${esc(s.cargo || '')})
-        <div class="pre">${esc(s.descripcion)}</div>${s.archivo_nombre ? `<a href="/api/compromisos/${c.id}/seguimientos/${s.id}/archivo" download>📎 ${esc(s.archivo_nombre)}</a>` : ''}</div>`).join('')
+        <div class="pre">${esc(s.descripcion)}</div>${s.archivo_nombre ? `<a href="api/compromisos/${c.id}/seguimientos/${s.id}/archivo" download>📎 ${esc(s.archivo_nombre)}</a>` : ''}</div>`).join('')
       : '<p class="vacio">Sin seguimientos.</p>'}`;
   vista.innerHTML = `<h2 class="titulo-form">${esc(c.mecanismo)}<br><small>${esc(c.acta_codigo)} (${esc(c.acta_fecha)})</small> ${estadoComp(c.estado)}</h2>
     <div class="controles"><button class="btn" onclick="location.hash='#/acta/${c.acta_id}?t=compromisos'">Volver al acta</button>

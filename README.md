@@ -1,18 +1,31 @@
-# SGI — Gestión documental
+# OIKOS — Sistema de Gestión Integral
 
-Sistema independiente que replica la funcionalidad de gestión documental de Almera
-(ver `../ESPECIFICACION.md`). Node.js 22+ con SQLite incluido, Express y JavaScript sin frameworks.
+Sistema que replica la gestión documental, de procesos, indicadores, riesgos, auditorías y mecanismos de integración de Almera.
+**PHP 8.1+ con MySQL / MariaDB** en el servidor (pensado para cPanel) y JavaScript sin frameworks en las pantallas.
 
-## Arrancar
-```bash
-npm install
-node server.js        # http://localhost:3100
-node prueba-flujo.js  # prueba de punta a punta (con el servidor corriendo y la base limpia)
-```
-La base `sgi.db` se crea sola con los procesos de Metalcof. Para empezar de cero, borra `sgi.db` y la carpeta `archivos/`.
+## Estructura
+| Carpeta | Qué tiene |
+|---|---|
+| `public/` | Lo único público: las pantallas (`index.html`, `*.js`, `styles.css`) y la API en `public/api/index.php` |
+| `php/` | El servidor: `nucleo.php` (base de datos, sesión, enrutador), `alcance.php` (qué ve cada rol), `modulos/*.php` (un archivo por módulo) y `config.php` |
+| `mysql/` | `esquema.sql` (todas las tablas), `datos-iniciales.sql` (Metalcof sin usuarios) y `datos-prueba.sql` (base de desarrollo con cuentas de prueba) |
+| `herramientas/` | `instalar.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
+
+## Arrancar en el equipo (XAMPP)
+1. Crea la base `oikos` y carga los datos: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123`
+   (base nueva) o `php herramientas/migrar-sqlite-a-mysql.php ruta/a/sgi.db` (datos de la versión anterior).
+   Para la base de desarrollo con cuentas de prueba: importa `mysql/esquema.sql` y `mysql/datos-prueba.sql`.
+2. Copia `php/config.ejemplo.php` como `php/config.php` y ajusta la conexión.
+3. Abre `http://localhost/OIKOS/` (el `.htaccess` del proyecto manda todo a `public/`).
+
+Sin Apache: `php -S 127.0.0.1:8080 -t public herramientas/servidor-local.php` y abre `http://127.0.0.1:8080/`.
+Para el servidor (cPanel) ver `DESPLIEGUE.md`.
+
+> La versión anterior en Node.js (`server.js`, `*.js` de la raíz, `sgi.db`) quedó como referencia mientras se valida la versión PHP;
+> no se usa ni se sube al servidor. Las pruebas `prueba-*.js` se corren contra PHP con `node herramientas/correr-pruebas.mjs`.
 
 ## Usuarios de prueba
-Una base **nueva** en desarrollo trae una cuenta por rol. Se ingresa con el correo (o con el usuario) y la clave:
+La base de **desarrollo** (`mysql/datos-prueba.sql`) trae una cuenta por rol. Se ingresa con el correo (o con el usuario) y la clave:
 
 | Correo | Usuario | Clave | Rol |
 |---|---|---|---|
@@ -22,8 +35,8 @@ Una base **nueva** en desarrollo trae una cuenta por rol. Se ingresa con el corr
 | colaborador@oikos.test | colaborador | colaborador123 | Colaborador |
 
 El dominio `.test` está reservado: esos correos nunca llegan a una bandeja real. Todas piden cambiar la clave al primer ingreso.
-En modo producción (`NODE_ENV=production`) no se crean cuentas de prueba, solo un administrador con la clave de
-`ADMIN_CLAVE_INICIAL` (o una al azar que sale en el registro) y, si se define, el correo de `ADMIN_CORREO`.
+En una instalación real no hay cuentas de prueba: `herramientas/instalar.php` crea solo el administrador con el correo y la clave temporal que le des.
+Las claves que venían de la versión Node siguen sirviendo; al ingresar se vuelven a guardar con el cifrado de PHP.
 **No anotes aquí las claves de una base en uso**: este archivo va al repositorio.
 
 ## Roles y alcance
@@ -38,12 +51,12 @@ En modo producción (`NODE_ENV=production`) no se crean cuentas de prueba, solo 
 - Una persona puede liderar varios procesos y un proceso puede tener varios líderes (tabla `usuario_procesos`). En Administración → Procesos, «Asignar líder» suma ese proceso (con sus subprocesos) y la × quita solo ese; quien se queda sin procesos pasa a Colaborador.
 - «Hace parte» de un mecanismo = integrante, coordinador, convocado a un acta o responsable de un compromiso.
 - En la base los roles conservan sus claves internas (`admin`, `lider_calidad`, `lider_proceso`, `consulta`); solo cambiaron los nombres que se ven.
-- Las reglas de alcance están en `alcance.js` (`propios`, `lidera`, `ve`, `filtro`); los módulos del servidor las reutilizan.
+- Las reglas de alcance están en `php/alcance.php` (`propios`, `lidera`, `ve`, `filtro`); los módulos del servidor las reutilizan.
 
 ## Cargos
 - Administración → **Cargos**: la estructura de cargos (como «Cargos» de Almera) con código OIKOS `CAR-<sigla del área>-<número>` (ej. `CAR-GPR-27` = Operario), área, jefe inmediato (otro cargo) y personas.
 - Se crean, editan (incluido activar/desactivar) y se asignan personas con «Personas». Si cambia quien ocupa un cargo, se reasigna ahí: el código, el área y el jefe se conservan. Una persona ocupa un cargo.
-- La primera vez se cargan solos los 48 cargos de Metalcof tomados de Almera, con sus jefes, y se asignan las personas que ya son usuarios por su nombre (`cargos.js`). El cargo «Responsable del proceso de servicios generales» no tenía número en Almera: quedó `CAR-MTC-47`.
+- La primera vez se cargan solos los 48 cargos de Metalcof tomados de Almera, con sus jefes, y se asignan las personas que ya son usuarios por su nombre (`php/semillas.php`). El cargo «Responsable del proceso de servicios generales» no tenía número en Almera: quedó `CAR-MTC-47`.
 - En Usuarios → Editar el cargo se elige de la lista; quien tenía un cargo escrito a mano lo conserva hasta que se le elija uno.
 
 ## Ingreso con correo y recuperación de la clave
@@ -52,9 +65,9 @@ En modo producción (`NODE_ENV=production`) no se crean cuentas de prueba, solo 
   «Completar correos» (asigna `usuario@dominio` a quien no tiene) o Importar datos → «Correos de usuarios que ya existen».
 - **Restablecer clave** (administrador): genera una clave temporal que se entrega una vez y se cambia al primer ingreso.
 - **¿Olvidaste tu clave?** (en la pantalla de ingreso):
-  - Con correo configurado, llega un enlace de un solo uso que vale 60 minutos. Variables: `SMTP_HOST`, `SMTP_PORT` (587; 465 = conexión segura),
-    `SMTP_USER`, `SMTP_PASS` (en Gmail o Microsoft 365 suele ser una «contraseña de aplicación»), `SMTP_FROM` y `APP_URL`
-    (dirección con la que se abre OIKOS, p. ej. `http://servidor/OIKOS`). Ver `correo.js`.
+  - Con correo configurado, llega un enlace de un solo uso que vale 60 minutos. En `php/config.php`: `smtp_host`, `smtp_puerto` (587; 465 = conexión segura),
+    `smtp_usuario`, `smtp_clave` (en Gmail o Microsoft 365 suele ser una «contraseña de aplicación»), `smtp_remitente` y `app_url`
+    (dirección con la que se abre OIKOS, p. ej. `https://oikos.metalcof.co`). Ver `php/correo.php`.
   - Sin correo configurado, la petición le aparece al administrador en Usuarios («Pidió restablecer su clave») y él entrega una temporal.
   - La respuesta es la misma exista o no el correo, y hay límite de pedidos por hora.
 
@@ -197,12 +210,11 @@ Igual a Almera (ver `../MECANISMOS-Y-PROCESOS-ALMERA.md`): encabezado con códig
 Pruebas: `node prueba-glosario.js` (servidor corriendo; crea y borra su propio término, así que funciona también con una base usada).
 
 ## Puesta en producción
-La guía completa está en **[DESPLIEGUE.md](DESPLIEGUE.md)**: Docker + Caddy con HTTPS automático, copias de seguridad diarias,
-restauración, actualización y lista de seguridad.
+La guía completa está en **[DESPLIEGUE.md](DESPLIEGUE.md)**: cPanel con PHP + MySQL, HTTPS, copias de seguridad, restauración, actualización y lista de seguridad.
 
-- Con `NODE_ENV=production` no se crean los usuarios de prueba: solo `admin`, con la clave de `ADMIN_CLAVE_INICIAL` o una al azar en el log.
-- **Respaldos**: `node backup.js`, automáticos cada día, o desde Administración → Respaldos.
-  Restaurar: `node restaurar.js <copia>.tar.gz` con el sistema apagado.
-- `/healthz` responde sin sesión, para monitoreo.
+- **Instalar**: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123` (base vacía) o `php herramientas/migrar-sqlite-a-mysql.php sgi.db` (datos anteriores).
+- **Respaldos**: Administración → Respaldos, o `php herramientas/respaldar.php` (en el Cron de cPanel, cada día). Restaurar: `php herramientas/restaurar.php <copia>.tar.gz`.
+- `/healthz` responde sin sesión, para monitoreo, y dice qué módulos tiene el servidor.
 
-Pruebas: `node prueba-produccion.js` y `node prueba-recuperar-clave.js` (no tocan tus datos: usan carpetas temporales, sus propios servidores y, la segunda, un servidor de correo falso).
+Pruebas (desarrollo): `node herramientas/correr-pruebas.mjs` corre las pruebas de la API contra PHP + MySQL con una base temporal.
+Las líneas «Pruebas: node prueba-…» de las secciones de arriba se corren hoy con ese comando.

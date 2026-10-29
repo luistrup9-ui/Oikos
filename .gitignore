@@ -5,3 +5,7 @@ backups/
 antes-de-restaurar-*/
 .env
 *.log
+
+# Versión PHP: configuración con la clave de la base y carpeta de datos (adjuntos y respaldos)
+php/config.php
+datos/

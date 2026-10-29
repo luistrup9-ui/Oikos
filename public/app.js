@@ -13,7 +13,7 @@ const ROLES = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lide
 async function api(url, opciones = {}) {
   const o = { ...opciones, headers: { ...(opciones.headers || {}) } };
   if (o.body && !(o.body instanceof FormData)) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(o.body); }
-  const res = await fetch('/api' + url, o);
+  const res = await fetch('api' + url, o);
   const datos = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (res.status === 401 && url !== '/login') { mostrarLogin(); throw new Error('Sesión vencida'); }
   if (!res.ok) throw new Error(datos?.error || 'Error ' + res.status);
@@ -250,7 +250,7 @@ async function documento(id) {
         <div class="tarjeta"><div class="encabezado"><h3 style="margin:0">Archivos y versiones</h3>
           ${d.puede_editar ? `<button class="btn chico primario" id="subir">${versionActual.length ? 'Reemplazar' : 'Adjuntar'} archivo v${d.version}</button>` : ''}</div>
           ${d.versiones.length ? `<table><thead><tr><th>Versión</th><th>Archivo</th><th>Cambios</th><th>Subido por</th><th>Fecha</th></tr></thead><tbody>
-            ${d.versiones.map(v => `<tr><td>v${v.version}</td><td><a href="/api/documentos/${d.id}/versiones/${v.id}">${esc(v.archivo_nombre)}</a></td>
+            ${d.versiones.map(v => `<tr><td>v${v.version}</td><td><a href="api/documentos/${d.id}/versiones/${v.id}">${esc(v.archivo_nombre)}</a></td>
               <td>${esc(v.cambios) || '—'}</td><td>${esc(v.usuario)}</td><td>${fecha(v.fecha)}</td></tr>`).join('')}</tbody></table>`
             : '<p class="vacio">Aún no hay archivos.</p>'}</div>
       </div>
