@@ -91,9 +91,13 @@
               <li><a href="#/tablero">Seguimiento</a></li>
               <li><a href="#/indicadores">Indicadores</a></li>
             </ul></li>
-          <li><a href="#" id="salir"><i class="ic ic-salir"></i>Salir <span class="gris" id="usuarioCorto"></span></a></li>
         </ul>
       </nav>
+      <div class="norte-der">
+        <form id="buscarTop" class="buscar-top" role="search"><i class="ic ic-lupa"></i><input name="q" type="search" placeholder="Buscar en OIKOS…" aria-label="Buscar en todo el sistema" autocomplete="off"></form>
+        <a class="chip-usuario" href="#/inicio" title="Mi perfil, mi calendario y mi clave"><span class="chip-av" id="chipIniciales"></span><span class="chip-tx"><b id="chipNombre"></b><small id="chipRol"></small></span></a>
+        <a href="#" id="salir" class="salir" title="Cerrar sesión"><i class="ic ic-salir"></i><span class="solo-lector">Salir</span><span id="usuarioCorto" hidden></span></a>
+      </div>
     </header>
 
     <aside class="oeste" id="oeste">

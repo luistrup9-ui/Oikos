@@ -9,7 +9,7 @@ Sistema que replica la gestión documental, de procesos, indicadores, riesgos, a
 | `public/` | Lo único público: las pantallas (`index.html`, `*.js`, `styles.css`) y la API en `public/api/index.php` |
 | `php/` | El servidor: `nucleo.php` (base de datos, sesión, enrutador), `alcance.php` (qué ve cada rol), `modulos/*.php` (un archivo por módulo) y `config.php` |
 | `mysql/` | `esquema.sql` (todas las tablas), `datos-iniciales.sql` (Metalcof sin usuarios) y `datos-prueba.sql` (base de desarrollo con cuentas de prueba) |
-| `herramientas/` | `instalar.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
+| `herramientas/` | `instalar.php`, `crear-admin.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
 
 ## Arrancar en el equipo (XAMPP)
 1. Crea la base `oikos` y carga los datos: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123`
@@ -37,7 +37,28 @@ La base de **desarrollo** (`mysql/datos-prueba.sql`) trae una cuenta por rol. Se
 El dominio `.test` está reservado: esos correos nunca llegan a una bandeja real. Todas piden cambiar la clave al primer ingreso.
 En una instalación real no hay cuentas de prueba: `herramientas/instalar.php` crea solo el administrador con el correo y la clave temporal que le des.
 Las claves que venían de la versión Node siguen sirviendo; al ingresar se vuelven a guardar con el cifrado de PHP.
-**No anotes aquí las claves de una base en uso**: este archivo va al repositorio.
+
+## Tu acceso de administrador (y qué hacer si lo pierdes)
+Accesos de la base en uso (XAMPP, `http://localhost/OIKOS/`). Se ingresa con el correo o con el usuario; ninguna pide cambiar la clave al entrar.
+**Este archivo solo debe verlo el equipo de desarrollo**: si el repositorio se comparte con alguien más, quita esta tabla antes.
+
+| Persona | Correo | Usuario | Clave | Rol |
+|---|---|---|---|---|
+| Luis Fernando Pobre Trujillo | luistrup9@gmail.com | luistrup9 | Hbs9Pfu9ED | Administrador |
+| Felipe Patiño | hernan.pipe12@gmail.co | hernan.pipe12 | cxFdr38ef7 | Administrador |
+| Cuenta original | — | admin | 9sgjezbXvf | Administrador |
+
+Las cuentas `calidad`, `produccion` y `consulta` vienen de la versión anterior; restablece su clave o desactívalas en Administración → Usuarios.
+
+Para crear otro administrador, o recuperar el acceso a uno que ya existe (también si se olvidaron todas las claves), en la consola del proyecto:
+```
+php herramientas/crear-admin.php correo@empresa.com --nombre="Nombre Apellido" --clave=MiClave123
+php herramientas/crear-admin.php admin
+```
+- Con un correo que no existe crea el administrador; con un usuario o correo que ya existe lo deja como administrador activo y le pone la clave nueva.
+- Sin `--clave` genera una y la muestra. La clave queda como la diste (no pide cambiarla al entrar) y se quitan bloqueos y sesiones viejas.
+- En XAMPP de Windows: `C:\xampp\php\php.exe herramientas\crear-admin.php …`. En cPanel, en la Terminal o con quien administre el hosting.
+- Después, en Administración → Usuarios, puedes desactivar las cuentas que ya no uses (siempre debe quedar un administrador activo).
 
 ## Roles y alcance
 | Rol | Qué ve | Qué puede hacer |

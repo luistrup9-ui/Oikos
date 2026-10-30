@@ -37,6 +37,8 @@ Navegador ──HTTPS──▶ Apache (cPanel)
      Crea las tablas, los procesos, catálogos, indicadores, mecanismos y cargos de Metalcof, y el administrador.
    - Sin Terminal: en phpMyAdmin importa `mysql/esquema.sql` y luego `mysql/datos-iniciales.sql`; el administrador se crea después
      con la Terminal o pidiéndole al hosting que corra `instalar.php`.
+   - Más adelante, para crear otro administrador o recuperar el acceso si se pierden las claves:
+     `php herramientas/crear-admin.php correo@empresa.com --nombre="Nombre Apellido"` (ver README, «Tu acceso de administrador»).
 6. **HTTPS** — cPanel → «SSL/TLS Status» → AutoSSL para el subdominio.
 7. Abre `https://oikos.metalcof.co/healthz`: debe responder `{"ok":true,"php":"8.x", "modulos":[…13 módulos…]}`.
 
