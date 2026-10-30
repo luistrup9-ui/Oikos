@@ -16,13 +16,15 @@ function listar_respaldos(): array {
     return array_map(fn($n) => info_respaldo(dir_respaldos() . "/$n"), $nombres);
 }
 
-// Volcado SQL completo: estructura (SHOW CREATE TABLE) y datos de cada tabla
-function volcar_sql(): string {
+// Volcado SQL completo: estructura (SHOW CREATE TABLE) y datos de cada tabla.
+// $sin_datos: tablas de las que solo se lleva la estructura (las de sesiones y fichas de clave, para volcados que viajan fuera del equipo)
+function volcar_sql(array $sin_datos = []): string {
     $pdo = bd();
     $sql = "-- OIKOS: copia de seguridad del " . gmdate('Y-m-d H:i:s') . " UTC\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS = 0;\n";
     foreach ($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $t) {
         $crear = $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM)[1];
         $sql .= "\nDROP TABLE IF EXISTS `$t`;\n$crear;\n";
+        if (in_array($t, $sin_datos, true)) continue;
         $st = $pdo->query("SELECT * FROM `$t`");
         $lote = [];
         while ($f = $st->fetch(PDO::FETCH_ASSOC)) {

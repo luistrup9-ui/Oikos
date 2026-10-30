@@ -39,16 +39,9 @@ En una instalación real no hay cuentas de prueba: `herramientas/instalar.php` c
 Las claves que venían de la versión Node siguen sirviendo; al ingresar se vuelven a guardar con el cifrado de PHP.
 
 ## Tu acceso de administrador (y qué hacer si lo pierdes)
-Accesos de la base en uso (XAMPP, `http://localhost/OIKOS/`). Se ingresa con el correo o con el usuario; ninguna pide cambiar la clave al entrar.
-**Este archivo solo debe verlo el equipo de desarrollo**: si el repositorio se comparte con alguien más, quita esta tabla antes.
-
-| Persona | Correo | Usuario | Clave | Rol |
-|---|---|---|---|---|
-| Luis Fernando Pobre Trujillo | luistrup9@gmail.com | luistrup9 | Hbs9Pfu9ED | Administrador |
-| Felipe Patiño | hernan.pipe12@gmail.co | hernan.pipe12 | cxFdr38ef7 | Administrador |
-| Cuenta original | — | admin | 9sgjezbXvf | Administrador |
-
-Las cuentas `calidad`, `produccion` y `consulta` vienen de la versión anterior; restablece su clave o desactívalas en Administración → Usuarios.
+Los accesos de la base en uso (usuario, correo y clave de cada administrador) están en **`ACCESOS-LOCAL.md`**, en la raíz del proyecto.
+Git lo ignora a propósito: este repositorio es público, y una clave escrita aquí la leería cualquiera. Si el repositorio pasa a ser privado,
+puedes pegar esa tabla en este README.
 
 Para crear otro administrador, o recuperar el acceso a uno que ya existe (también si se olvidaron todas las claves), en la consola del proyecto:
 ```
@@ -59,6 +52,17 @@ php herramientas/crear-admin.php admin
 - Sin `--clave` genera una y la muestra. La clave queda como la diste (no pide cambiarla al entrar) y se quitan bloqueos y sesiones viejas.
 - En XAMPP de Windows: `C:\xampp\php\php.exe herramientas\crear-admin.php …`. En cPanel, en la Terminal o con quien administre el hosting.
 - Después, en Administración → Usuarios, puedes desactivar las cuentas que ya no uses (siempre debe quedar un administrador activo).
+
+## Guardar los datos que vas poniendo
+Todo lo que cambias en OIKOS se guarda al instante en MySQL (base `oikos`, en `C:\xampp\mysql\data\oikos`) y sigue ahí al apagar el equipo.
+Para tener además un archivo `.sql` (por si XAMPP se daña, o para llevar los datos a otro MySQL):
+- Doble clic en `herramientas\guardar-datos.bat` (o `php herramientas/exportar-sql.php`): escribe `datos/oikos-datos.sql` con toda la base, sin las
+  sesiones abiertas ni las fichas de recuperación de clave. Reemplaza al anterior; hazlo cada vez que quieras fijar una versión.
+- Los adjuntos viven en `datos/archivos/`. Administración → Respaldos crea un `.tar.gz` con la base **y** los adjuntos juntos.
+- **Estos archivos no suben con `push`**: `datos/` está en `.gitignore` porque el repositorio es público y el volcado trae datos reales y las claves
+  cifradas de todos los usuarios.
+- Para llevar los datos a cPanel: phpMyAdmin → la base → *Importar* → `oikos-datos.sql`; o subir un respaldo `.tar.gz` a `datos/respaldos/` del
+  servidor y correr `php herramientas/restaurar.php datos/respaldos/<copia>.tar.gz`.
 
 ## Roles y alcance
 | Rol | Qué ve | Qué puede hacer |

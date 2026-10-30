@@ -35,6 +35,9 @@ Navegador ──HTTPS──▶ Apache (cPanel)
      `php herramientas/migrar-sqlite-a-mysql.php /ruta/a/sgi.db`. Copia todo, comprueba que cada tabla cuadre y copia los adjuntos.
    - **Desde cero** (sin datos anteriores): `php herramientas/instalar.php correo@empresa.com ClaveTemporal123`.
      Crea las tablas, los procesos, catálogos, indicadores, mecanismos y cargos de Metalcof, y el administrador.
+   - **Con los datos que ya tienes en XAMPP** (ya en MySQL): en tu equipo corre `herramientas\guardar-datos.bat` y sube `datos/oikos-datos.sql`
+     por phpMyAdmin → *Importar*; o crea un respaldo en Administración → Respaldos, súbelo a `datos/respaldos/` y usa `php herramientas/restaurar.php`
+     (este último lleva también los adjuntos). Esos archivos **no** viajan por Git: el repositorio es público.
    - Sin Terminal: en phpMyAdmin importa `mysql/esquema.sql` y luego `mysql/datos-iniciales.sql`; el administrador se crea después
      con la Terminal o pidiéndole al hosting que corra `instalar.php`.
    - Más adelante, para crear otro administrador o recuperar el acceso si se pierden las claves:

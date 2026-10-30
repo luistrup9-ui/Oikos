@@ -9,3 +9,6 @@ antes-de-restaurar-*/
 # Versión PHP: configuración con la clave de la base y carpeta de datos (adjuntos y respaldos)
 php/config.php
 datos/
+
+# Accesos reales de la base en uso (solo en este equipo; el repositorio es público)
+ACCESOS-LOCAL.md
