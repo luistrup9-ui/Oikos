@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OIKOS · Sistema de Gestión Integral</title>
-  <meta name="theme-color" content="#303034">
+  <meta name="theme-color" content="#005b59">
   <link rel="icon" type="image/svg+xml" href="oikos/oikos-isotipo.svg">
   <link rel="preload" href="fuentes/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fuentes/sora-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="oikos-ui.css?v=8">
 </head>
 <body>
   <div id="login" class="login" hidden>
@@ -101,7 +102,7 @@
     </header>
 
     <aside class="oeste" id="oeste">
-      <div class="logo" id="logo"><img src="oikos/oikos-logo-claro.svg" alt="OIKOS" onerror="this.remove()"><b id="logoTexto"></b></div>
+      <div class="logo" id="logo"><img src="oikos/oikos-logo.svg" alt="OIKOS" onerror="this.remove()"><b id="logoTexto"></b></div>
       <div class="quien"><i class="ic ic-usuario"></i><span id="usuario"></span><br><span class="gris" id="empresa"></span></div>
       <div class="pestanas" role="tablist">
         <button class="activo" data-tab="plan">Plan Individual</button>
@@ -133,7 +134,7 @@
     </main>
   </div>
 
-  <dialog id="modal"><form method="dialog" id="modalForm"></form></dialog>
+  <dialog id="modal"><button type="button" class="dlg-cerrar" aria-label="Cerrar" title="Cerrar"></button><form method="dialog" id="modalForm"></form></dialog>
   <div id="aviso" class="aviso" hidden></div>
   <script src="app.js"></script>
   <script src="indicadores.js"></script>
@@ -146,5 +147,6 @@
   <script src="mapa.js"></script>
   <script src="personal.js"></script>
   <script src="armazon.js"></script>
+  <script src="oikos-ui.js?v=2"></script>
 </body>
 </html>
