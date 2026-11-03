@@ -81,9 +81,11 @@ function importadores(): array {
     return [
         'usuarios' => [
             'titulo' => 'Usuarios', 'soloAdmin' => true,
-            'columnas' => ['correo', 'nombre', 'cargo', 'rol', 'proceso'], 'requeridas' => ['correo', 'nombre', 'rol'],
-            'ejemplo' => ['jperez@metalcof.co', 'Juan Pérez', 'Jefe de Producción', 'Líder', 'Producción'],
-            'ayuda' => 'rol: Administrador, Gestor de Calidad, Líder o Colaborador. El Líder necesita proceso. La persona ingresa con su correo; a cada usuario se le genera una clave temporal.',
+            'columnas' => ['correo', 'nombre', 'cargo', 'rol', 'proceso', 'procesos'], 'requeridas' => ['correo', 'nombre', 'rol'],
+            'ejemplo' => ['jperez@metalcof.co', 'Juan Pérez', 'Jefe de Producción', 'Líder', 'Producción', ''],
+            'ayuda' => 'rol: Administrador, Gestor de Calidad, Líder o Colaborador. El Líder necesita proceso: con «proceso» lidera ese proceso y sus subprocesos; si quieres marcarle exactamente otros, '
+                . 'pon en «procesos» los que lidera separados por | (ej. Contabilidad | Tesorería). El cargo se vincula a la estructura de cargos si coincide su nombre o su código (CAR-…); si no, queda como texto. '
+                . 'La persona ingresa con su correo; a cada usuario se le genera una clave temporal.',
             'preparar' => function (array $f, array &$ctx) {
                 $correo = limpiar_correo($f['correo']);
                 if (!preg_match(CORREO_RE, $correo)) fila_mal("correo: “{$f['correo']}” no es válido");
@@ -95,14 +97,31 @@ function importadores(): array {
                 $rol = $alias[norm($f['rol'])] ?? elegir($f['rol'], ROLES, 'rol');
                 $proceso = !empty($f['proceso']) ? buscar_en($ctx['procesos'], $f['proceso'], ['nombre', 'sigla']) : null;
                 if (!empty($f['proceso']) && !$proceso) fila_mal("proceso: no existe “{$f['proceso']}”");
-                if ($rol === 'lider_proceso' && !$proceso) fila_mal('el Líder necesita proceso');
-                return ['correo' => $correo, 'nombre' => $f['nombre'], 'cargo' => ($f['cargo'] ?? '') ?: null, 'rol' => $rol, 'proceso_id' => $proceso['id'] ?? null, 'resumen' => "$correo · " . ROL_ETIQUETA[$rol]];
+                // «procesos»: exactamente los que lidera (sin repetidos); vacío = el proceso con sus subprocesos
+                $marcados = [];
+                foreach (explode('|', (string)($f['procesos'] ?? '')) as $nombreP) {
+                    if (trim($nombreP) === '') continue;
+                    $p = buscar_en($ctx['procesos'], trim($nombreP), ['nombre', 'sigla']);
+                    if (!$p) fila_mal('procesos: no existe “' . trim($nombreP) . '”');
+                    $marcados[(int)$p['id']] = $p;
+                }
+                if ($marcados && $rol !== 'lider_proceso') fila_mal('procesos: solo el Líder lidera procesos');
+                if ($rol === 'lider_proceso' && !$proceso && !$marcados) fila_mal('el Líder necesita proceso');
+                if (!$proceso && $marcados) { // proceso principal: el primero marcado que no sea subproceso, o el primero (igual que al editar)
+                    $proceso = reset($marcados);
+                    foreach ($marcados as $p) if (!$p['padre_id']) { $proceso = $p; break; }
+                }
+                $cargo = !empty($f['cargo']) ? buscar_en($ctx['cargos'], $f['cargo'], ['nombre', 'codigo']) : null;
+                $ids = $marcados ? array_keys($marcados) : ($rol === 'lider_proceso' ? con_subprocesos((int)$proceso['id']) : []);
+                return ['correo' => $correo, 'nombre' => $f['nombre'], 'cargo' => $cargo['nombre'] ?? (($f['cargo'] ?? '') ?: null), 'cargo_id' => $cargo['id'] ?? null, 'rol' => $rol,
+                    'proceso_id' => $proceso['id'] ?? null, 'procesos' => $ids,
+                    'resumen' => "$correo · " . ROL_ETIQUETA[$rol] . ($rol === 'lider_proceso' ? ' · ' . count($ids) . ' proceso(s)' : '')];
             },
             'aplicar' => function (array $d, array &$ctx) {
                 $clave = generar_clave(); $usuario = usuario_desde($d['correo']);
-                $id = ejecutar('INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, rol, proceso_id, clave, activo, debe_cambiar) VALUES (?,?,?,?,?,?,?,?,1,1)',
-                    $ctx['u']['empresa_id'], $usuario, $d['correo'], $d['nombre'], $d['cargo'], $d['rol'], $d['proceso_id'], hash_clave($clave));
-                if ($d['rol'] === 'lider_proceso') guardar_procesos($id, con_subprocesos((int)$d['proceso_id'])); // el proceso con sus subprocesos
+                $id = ejecutar('INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, cargo_id, rol, proceso_id, clave, activo, debe_cambiar) VALUES (?,?,?,?,?,?,?,?,?,1,1)',
+                    $ctx['u']['empresa_id'], $usuario, $d['correo'], $d['nombre'], $d['cargo'], $d['cargo_id'], $d['rol'], $d['proceso_id'], hash_clave($clave));
+                if ($d['rol'] === 'lider_proceso') guardar_procesos($id, $d['procesos']);
                 $ctx['claves'][] = ['usuario' => $d['correo'], 'nombre' => $d['nombre'], 'clave_temporal' => $clave];
             },
         ],
@@ -263,7 +282,9 @@ $R->post('/api/importar/:tipo', function (Peticion $req) {
     if (count($filas) > 5000) falla(400, 'Máximo 5000 filas por archivo');
     $ctx = ['u' => $req->u, 'vistos' => [], 'claves' => [],
         'procesos' => todos('SELECT * FROM procesos WHERE empresa_id = ?', $req->u['empresa_id']), 'tipos' => todos('SELECT * FROM tipos_documento'),
-        'clases' => todos('SELECT * FROM clases_documento'), 'usuarios' => todos('SELECT id, usuario, correo, nombre FROM usuarios WHERE empresa_id = ? AND activo = 1', $req->u['empresa_id'])];
+        'clases' => todos('SELECT * FROM clases_documento'),
+        'cargos' => array_map(fn($c) => $c + ['codigo' => codigo_cargo($c)], todos('SELECT id, nombre, area_sigla, numero FROM cargos WHERE empresa_id = ? AND activo = 1', $req->u['empresa_id'])),
+        'usuarios' => todos('SELECT id, usuario, correo, nombre FROM usuarios WHERE empresa_id = ? AND activo = 1', $req->u['empresa_id'])];
     $revisadas = [];
     foreach ($filas as $k => $f) {
         try {

@@ -267,6 +267,35 @@ const PRUEBA = { admin: ['admin@oikos.test', 'admin123'], calidad: ['gestor@oiko
   um = (await llamar('admin', '/usuarios')).find(u => u.id === idM);
   esperar('Al quitarla del cargo queda sin cargo', !um.cargo_id && !um.cargo, um);
 
+  // ---- Importar usuarios: cargo de la estructura y procesos exactos (para llevar a las mismas personas de un entorno a otro) ----
+  const cat3 = await llamar('admin', '/catalogos');
+  const nombreDe = id => cat3.procesos.find(p => p.id === id)?.nombre;
+  const numeros = lista => [...lista].sort((a, b) => a - b).join();
+  const idsConHijos = id => cat3.procesos.filter(p => p.id === id || p.padre_id === id).map(p => p.id);
+  const gpr27 = cg.find(c => c.codigo === 'CAR-GPR-27');
+  const importables = [
+    'correo;nombre;cargo;rol;proceso;procesos',
+    `imp1@oikos.test;Imp Uno;Gerente General;Líder;${nombreDe(pid('ALM'))};`,
+    `imp2@oikos.test;Imp Dos;CAR-GPR-27;Líder;;${nombreDe(sub.id)} | ${nombreDe(pid('FIN'))}`,
+    'imp3@oikos.test;Imp Tres;Cargo que no existe;Colaborador;;',
+  ];
+  const conErrores = [...importables, `imp4@oikos.test;Imp Cuatro;;Colaborador;;${nombreDe(pid('FIN'))}`, 'imp5@oikos.test;Imp Cinco;;Líder;;Proceso inventado'].join('\r\n');
+  r = await llamar('admin', '/importar/usuarios', { csv: conErrores, aplicar: true });
+  esperar('Usuarios: revisa cargo y procesos; 3 válidas, 2 con error que dicen por qué y no importa nada',
+    r.validas === 3 && r.errores === 2 && !r.aplicado && /solo el Líder/.test(r.filas[3].error) && /Proceso inventado/.test(r.filas[4].error), r.filas);
+  esperar('Usuarios: el resumen cuenta los procesos que lidera', /\b2 proceso\(s\)/.test(r.filas[1].resumen) && new RegExp(`${idsConHijos(pid('ALM')).length} proceso\\(s\\)`).test(r.filas[0].resumen), r.filas.slice(0, 2));
+  r = await llamar('admin', '/importar/usuarios', { csv: importables.join('\r\n'), aplicar: true });
+  esperar('Usuarios: importa las válidas y entrega sus claves', r.aplicado && r.claves.length === 3 && r.claves[0].usuario === 'imp1@oikos.test', r);
+  const impUs = await llamar('admin', '/usuarios');
+  const [i1, i2, i3] = ['imp1', 'imp2', 'imp3'].map(x => impUs.find(u => u.correo === `${x}@oikos.test`));
+  esperar('El cargo por nombre queda vinculado a la estructura', i1.cargo_id === gg.id && i1.cargo === 'Gerente General', i1);
+  esperar('El cargo por código también', i2.cargo_id === gpr27.id && i2.cargo === 'Operario', i2);
+  esperar('Un cargo que no está en la estructura queda como texto', !i3.cargo_id && i3.cargo === 'Cargo que no existe', i3);
+  esperar('Sin «procesos» lidera su proceso con sus subprocesos', numeros(i1.procesos) === numeros(idsConHijos(pid('ALM'))) && i1.proceso_id === pid('ALM'), i1);
+  esperar('Con «procesos» lidera exactamente esos y su principal es el proceso, no el subproceso', numeros(i2.procesos) === numeros([sub.id, pid('FIN')]) && i2.proceso_id === pid('FIN'), i2);
+  r = await login('imp2', 'imp2@oikos.test', r.claves?.[1]?.clave_temporal ?? '');
+  esperar('Y entra con su correo y la clave temporal', r.ok, r);
+
   r = await llamar('calidad', '/importar/documentos/plantilla');
   esperar('Descarga la plantilla CSV', r.texto?.includes('"codigo";"nombre";"tipo"'), r);
 

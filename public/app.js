@@ -12,6 +12,23 @@ const esCalidad = () => yo && (yo.rol === 'admin' || yo.rol === 'lider_calidad')
 // Las claves internas de los roles no cambian (la base las exige); estos son los nombres que ve la gente
 const ROLES = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lider_proceso: 'Líder', consulta: 'Colaborador' };
 
+// Acciones sin código en el HTML: la política de seguridad (public/.htaccess) no admite atributos de evento (onclick, onfocus, onerror).
+//   data-ir="#/ruta"     al pulsar el elemento (fila, pestaña, botón «Volver»...) se pasa a esa pantalla
+//   data-imprimir        al pulsarlo se abre la impresión (Exportar a PDF)
+//   data-seleccionar     al enfocar el campo se selecciona todo su texto (la clave temporal, para copiarla)
+// prueba-csp.js vigila que no vuelva a escribirse ningún atributo de evento.
+document.addEventListener('click', e => {
+  const el = e.target.closest?.('[data-ir], [data-imprimir]');
+  if (!el) return;
+  if (el.hasAttribute('data-imprimir')) window.print(); else location.hash = el.getAttribute('data-ir');
+});
+document.addEventListener('focusin', e => { if (e.target.matches?.('[data-seleccionar]')) e.target.select(); });
+// Si la imagen del logo no carga, se quita (así no queda el ícono de imagen rota junto al nombre)
+{
+  const logo = $('#logo img');
+  if (logo) { const quitar = () => logo.remove(); logo.addEventListener('error', quitar); if (logo.complete && !logo.naturalWidth) quitar(); }
+}
+
 async function api(url, opciones = {}) {
   const o = { ...opciones, headers: { ...(opciones.headers || {}) } };
   if (o.body && !(o.body instanceof FormData)) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(o.body); }
@@ -125,7 +142,7 @@ function tablaDocs(docs) {
   if (!docs.length) return '<p class="vacio">No hay documentos con estos criterios.</p>';
   return `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Clase</th><th>Proceso</th>
     <th>Origen</th><th>Versión</th><th>Estado</th><th>Vence</th><th>Modificado</th></tr></thead><tbody>
-    ${docs.map(d => `<tr class="click" onclick="location.hash='#/documento/${d.id}'"><td class="mono">${esc(d.codigo)}</td>
+    ${docs.map(d => `<tr class="click" data-ir="#/documento/${d.id}"><td class="mono">${esc(d.codigo)}</td>
       <td>${esc(d.nombre)}</td><td>${esc(d.tipo)}</td><td>${esc(d.clase)}</td><td>${esc(d.proceso)}</td><td>${esc(d.origen)}</td>
       <td>${d.version}</td><td>${estado(d.estado)}</td><td>${fecha(d.fecha_vencimiento)}</td><td>${fecha(d.modificado)}</td></tr>`).join('')}
     </tbody></table></div>`;
@@ -145,7 +162,7 @@ async function inicio() {
     <div class="tarjeta"><h3>Transiciones pendientes</h3>
       ${p.documentos.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Nombre</th><th>Proceso</th><th>Estado</th>
         <th>Acción pendiente</th><th>Modificado</th></tr></thead><tbody>
-        ${p.documentos.map(d => `<tr class="click" onclick="location.hash='#/documento/${d.id}'"><td class="mono">${esc(d.codigo)}</td>
+        ${p.documentos.map(d => `<tr class="click" data-ir="#/documento/${d.id}"><td class="mono">${esc(d.codigo)}</td>
           <td>${esc(d.nombre)}</td><td>${esc(d.proceso)}</td><td>${estado(d.estado)}</td>
           <td>${d.transiciones.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</td><td>${fecha(d.modificado)}</td></tr>`).join('')}
         </tbody></table></div>` : '<p class="vacio">No tienes pendientes. 🎉</p>'}
@@ -321,7 +338,7 @@ async function solicitudes(pestana) {
   vista.innerHTML = `
     <div class="encabezado"><h2>Solicitudes</h2>
       ${yo.rol !== 'consulta' ? '<button class="btn primario" id="nuevaSol">Nueva solicitud</button>' : ''}</div>
-    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" onclick="location.hash='#/solicitudes/${k}'">${n}</button>`).join('')}</div>
+    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" data-ir="#/solicitudes/${k}">${n}</button>`).join('')}</div>
     ${lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>#</th><th>Tipo</th><th>Documento</th><th>Proceso</th><th>Clase</th>
       <th>Justificación</th><th>Solicitante</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>
       ${lista.map(s => `<tr><td>${s.id}</td><td>${esc(s.tipo_solicitud)}</td>

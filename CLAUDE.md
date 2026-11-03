@@ -22,6 +22,11 @@ Cómo funciona y cómo escribirlas bien:
 - `php/config.php`, `datos/` y `ACCESOS-LOCAL.md` están en `.gitignore`. Ninguna clave, token ni dato real se escribe en archivos del repositorio, commits ni issues.
 - En el hosting, adjuntos y respaldos viven fuera de `public_html` (`datos_dir`); un push nunca los toca.
 
+## Interfaz y seguridad del navegador
+- La política de seguridad (`public/.htaccess`) no admite código escrito dentro del HTML: nada de `onclick=`, `onfocus=`, `onerror=`, `<script>` sin `src` ni `javascript:`. Ese código no se ejecuta y falla sin avisar.
+  Para que una fila o un botón lleve a otra pantalla o imprima, usa `data-ir="#/ruta"` y `data-imprimir` (los atiende `public/app.js`); para lo demás, `addEventListener`. `prueba-csp.js` lo vigila.
+- Los textos que escribe una persona se insertan en el HTML siempre con `esc(...)`.
+
 ## Despliegue
 - El hosting NO recibe nada de GitHub: un cron de cPanel corre `herramientas/desplegar.sh` cada minuto, mira si `main` tiene un commit nuevo,
   lo trae (`git merge --ff-only`) y corre `herramientas/migrar.php`. (Un Action de GitHub no sirve: la protección Imunify360 del hosting bloquea sus llamadas a cPanel, y PHP no puede ejecutar `git` allí porque `exec` está desactivado.)

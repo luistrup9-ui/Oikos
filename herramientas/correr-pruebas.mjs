@@ -13,7 +13,7 @@ const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..').re
 const PHP = process.env.PHP_BIN || (fs.existsSync('C:/xampp/php/php.exe') ? 'C:/xampp/php/php.exe' : 'php');
 const MYSQL = process.env.MYSQL_BIN || (fs.existsSync('C:/xampp/mysql/bin/mysql.exe') ? 'C:/xampp/mysql/bin/mysql.exe' : 'mysql');
 const USUARIO = process.env.MYSQL_USUARIO || 'root', PUERTO = 3196, dormir = ms => new Promise(r => setTimeout(r, ms));
-const nombres = process.argv[2] ? process.argv[2].split(',') : ['admin', 'recuperar-clave', 'flujo', 'procesos', 'indicadores', 'riesgos', 'auditorias', 'mecanismos', 'glosario', 'mop'];
+const nombres = process.argv[2] ? process.argv[2].split(',') : ['admin', 'recuperar-clave', 'flujo', 'procesos', 'indicadores', 'riesgos', 'auditorias', 'mecanismos', 'glosario', 'mop', 'csp'];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'oikos-pruebas-')).replace(/\\/g, '/');
 const config = `${tmp}/config.php`;
 // Configuración del servidor de prueba. Algunas pruebas necesitan algo distinto (p. ej. un SMTP falso para «Olvidé mi clave»)

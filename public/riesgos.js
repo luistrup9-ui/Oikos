@@ -77,7 +77,7 @@ rutas.riesgos = async function () {
     $('#quitarCelda').hidden = !estado.celda;
     $('#lista').innerHTML = visibles.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Riesgo</th><th>Proceso</th><th>Tipo</th>
       <th class="num">P×I</th><th>Absoluto</th><th class="num">Controles</th><th class="num">P×I</th><th>Residual</th><th>Tratamiento</th><th>Responsable</th></tr></thead><tbody>
-      ${visibles.map(x => `<tr class="click" onclick="location.hash='#/riesgo/${x.id}'"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td>
+      ${visibles.map(x => `<tr class="click" data-ir="#/riesgo/${x.id}"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td>
         <td>${esc(x.proceso)}</td><td>${esc(x.tipo)}</td><td class="num">${x.probabilidad}×${x.impacto}</td><td>${zonaTag(x.zona)}</td>
         <td class="num">${x.total_controles}</td><td class="num">${x.probabilidad_residual}×${x.impacto_residual}</td><td>${zonaTag(x.zona_residual)}</td>
         <td>${esc(x.tratamiento)}</td><td>${esc(x.responsable)}</td></tr>`).join('')}</tbody></table></div>`
@@ -249,7 +249,7 @@ rutas.controles = async function () {
       <div class="kpi"><b>${lista.filter(x => x.efectividad === 'Fuerte').length}</b><span>Fuertes</span></div></div>
       ${lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>Proceso</th><th>Cód. riesgo</th><th>Riesgo</th><th>Cód. control</th><th>Control</th>
       <th>Clasificación</th><th>Mitiga P</th><th>Mitiga I</th><th>Efectividad</th><th>Resp. gestión</th><th>Resp. revisión</th></tr></thead><tbody>
-      ${lista.map(c => `<tr class="click" onclick="location.hash='#/riesgo/${c.riesgo_id}'"><td>${esc(c.proceso)}</td><td class="mono">${esc(c.riesgo_codigo)}</td>
+      ${lista.map(c => `<tr class="click" data-ir="#/riesgo/${c.riesgo_id}"><td>${esc(c.proceso)}</td><td class="mono">${esc(c.riesgo_codigo)}</td>
         <td>${esc(c.riesgo)}</td><td class="mono">${esc(c.codigo)}</td><td>${esc(c.descripcion)}</td><td>${esc(c.clasificacion)}</td>
         <td>${c.mitiga_probabilidad ? 'Sí' : 'No'}</td><td>${c.mitiga_impacto ? 'Sí' : 'No'}</td><td>${esc(c.efectividad)}</td>
         <td>${esc(c.responsable_gestion)}</td><td>${esc(c.responsable_revision)}</td></tr>`).join('')}</tbody></table></div>`

@@ -128,7 +128,7 @@ rutas.indicadores = async function () {
     $('#resultado').innerHTML = lista.length ? `<div class="tabla-wrap"><table><thead><tr><th></th><th>Código</th><th>Indicador</th>
       <th>Proceso</th><th>Frecuencia</th><th>Tendencia ${esc(f.anio)}</th><th class="num">Previo</th><th class="num">Último</th>
       <th class="num">Meta</th><th>Pendiente</th></tr></thead><tbody>
-      ${lista.map(i => `<tr class="click" onclick="location.hash='#/indicador/${i.id}?anio=${esc(f.anio)}'"><td>${sem(i.semaforo)}</td>
+      ${lista.map(i => `<tr class="click" data-ir="#/indicador/${i.id}?anio=${esc(f.anio)}"><td>${sem(i.semaforo)}</td>
         <td class="mono">${esc(i.codigo)}</td><td>${esc(i.nombre)}</td><td>${esc(i.proceso)}</td><td>${esc(i.frecuencia)}</td>
         <td>${grafica(i.serie, i.unidad, { mini: true })}</td><td class="num">${fmt(i.previo?.valor, i.unidad)}</td>
         <td class="num"><b>${fmt(i.ultimo?.valor, i.unidad)}</b><br><small class="sub">${esc(i.ultimo ? i.ultimo.etiqueta + ' ' + i.ultimo.anio : '')}</small></td>
@@ -279,7 +279,7 @@ rutas.seguimiento = async function () {
     <h2 class="titulo-form">Seguimiento al MOP</h2>
     <div class="controles"><label class="en-linea">Año <select id="anio">${selAnio(anio)}</select></label>
       <span class="espacio"></span><button class="btn" id="exportar"><i class="ic ic-excel"></i> Exportar</button>
-      <button class="btn icono-solo" title="Imprimir" onclick="window.print()"><i class="ic ic-imprimir"></i></button></div>
+      <button class="btn icono-solo" title="Imprimir" data-imprimir><i class="ic ic-imprimir"></i></button></div>
     <div class="etiquetas"><span class="sgitag" id="expandir" role="button">+ Expandir</span><span class="sgitag" id="colapsar" role="button">- Colapsar</span></div>
     <div class="tabla-wrap"><table class="arbol mop"><thead><tr><th>Nombre</th><th></th><th>Medición previa</th><th></th><th>Último valor</th><th>Meta</th><th></th></tr></thead>
       <tbody>${filas}</tbody></table></div>`;
@@ -317,6 +317,6 @@ rutas.inicio = async function () {
   if (!pend.length) return;
   vista.insertAdjacentHTML('beforeend', `<div class="tarjeta"><h3>Mediciones de indicadores atrasadas</h3>
     <div class="tabla-wrap"><table><thead><tr><th>Indicador</th><th>Proceso</th><th>Periodos sin medir</th></tr></thead><tbody>
-    ${pend.map(i => `<tr class="click" onclick="location.hash='#/indicador/${i.id}'"><td>${esc(i.nombre)}</td><td>${esc(i.proceso)}</td>
+    ${pend.map(i => `<tr class="click" data-ir="#/indicador/${i.id}"><td>${esc(i.nombre)}</td><td>${esc(i.proceso)}</td>
       <td class="faltan">${esc(i.faltantes.join(', '))}</td></tr>`).join('')}</tbody></table></div></div>`);
 };

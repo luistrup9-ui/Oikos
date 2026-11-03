@@ -35,21 +35,21 @@ rutas.proceso = async function (id) {
   } else if (t === 'riesgos') {
     const l = await api('/riesgos?' + qs({ proceso: id }));
     cuerpo = l.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Riesgo</th><th>Tipo</th><th>Riesgo absoluto</th><th>Riesgo residual</th></tr></thead><tbody>
-      ${l.map(x => `<tr class="click" onclick="location.hash='#/riesgo/${x.id}'"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.tipo)}</td>
+      ${l.map(x => `<tr class="click" data-ir="#/riesgo/${x.id}"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.tipo)}</td>
         <td><span class="zona ${esc(x.zona)}">${esc(x.zona)}</span></td><td><span class="zona ${esc(x.zona_residual)}">${esc(x.zona_residual)}</span></td></tr>`).join('')}</tbody></table></div>`
       : '<p class="vacio">Este proceso no tiene riesgos registrados.</p>';
   } else if (t === 'medicion') {
     const l = await api('/indicadores?' + qs({ proceso: id }));
     const color = { verde: '#008000', amarillo: '#c99700', rojo: '#f00', sin_dato: '#808080' };
     cuerpo = l.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Indicador</th><th>Frecuencia</th><th>Último valor</th><th>Meta</th><th></th></tr></thead><tbody>
-      ${l.map(i => `<tr class="click" onclick="location.hash='#/indicador/${i.id}'"><td class="mono">${esc(i.codigo)}</td><td>${esc(i.nombre)}</td><td>${esc(i.frecuencia)}</td>
+      ${l.map(i => `<tr class="click" data-ir="#/indicador/${i.id}"><td class="mono">${esc(i.codigo)}</td><td>${esc(i.nombre)}</td><td>${esc(i.frecuencia)}</td>
         <td class="num" style="color:${color[i.semaforo]}">${fmt(i.ultimo?.valor, i.unidad)}</td><td class="num">${fmt(i.meta, i.unidad)}</td>
         <td><i class="punto" style="background:${color[i.semaforo]}"></i></td></tr>`).join('')}</tbody></table></div>`
       : '<p class="vacio">Este proceso no tiene indicadores.</p>';
   } else if (t === 'mejora') {
     const l = await api('/hallazgos?' + qs({ proceso: id }));
     cuerpo = l.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Tipo</th><th>Origen</th><th>Descripción</th><th>Acciones</th></tr></thead><tbody>
-      ${l.map(h => `<tr class="click" onclick="location.hash='#/hallazgo/${h.id}'"><td class="mono">${esc(h.codigo)}</td><td>${esc(h.tipo)}</td><td>${esc(h.origen)}</td>
+      ${l.map(h => `<tr class="click" data-ir="#/hallazgo/${h.id}"><td class="mono">${esc(h.codigo)}</td><td>${esc(h.tipo)}</td><td>${esc(h.origen)}</td>
         <td>${esc(String(h.descripcion || '').slice(0, 140))}</td><td>${h.acciones_cerradas}/${h.total_acciones} cerradas</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="vacio">Este proceso no tiene planes de mejora.</p>';
   } else {
@@ -60,9 +60,9 @@ rutas.proceso = async function (id) {
       ${l.length ? '' : '<p class="vacio">Sin versiones registradas.</p>'}<div id="versionVista"></div>`;
   }
   vista.innerHTML = `<div class="ruta-proc">${p.ruta.map(x => `» <a href="#/proceso/${x.id}">${esc(x.nombre)}</a> `).join('')}» <b>${esc(p.nombre)}</b></div>
-    <div class="controles"><button class="btn" onclick="location.hash='#/mapa'">Mapa de procesos</button>
+    <div class="controles"><button class="btn" data-ir="#/mapa">Mapa de procesos</button>
       ${p.puede_editar ? '<button class="btn" id="editarProc">Editar</button>' : ''}
-      <span class="espacio"></span><button class="btn icono-solo" title="Imprimir / PDF" onclick="window.print()"><i class="ic ic-imprimir"></i></button></div>
+      <span class="espacio"></span><button class="btn icono-solo" title="Imprimir / PDF" data-imprimir><i class="ic ic-imprimir"></i></button></div>
     ${pestanasPagina(p.propio !== false ? [['general', 'General'], ['riesgos', 'Matriz de Riesgos'], ['medicion', 'Medición'], ['mejora', 'Planes de mejora'], ['historial', 'Historial']]
       : [['general', 'General'], ['historial', 'Historial']], t, base)}
     <div class="tarjeta ficha-proceso">${cuerpo}</div>`;

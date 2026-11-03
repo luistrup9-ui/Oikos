@@ -36,7 +36,7 @@ rutas.admin = async function () {
   const pestana = new URLSearchParams(location.hash.split('?')[1] || '').get('v') || (esAdmin ? 'usuarios' : 'importar');
   const tabs = [...(esAdmin ? [['usuarios', 'Usuarios'], ['cargos', 'Cargos'], ['procesos', 'Procesos']] : []), ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
   vista.innerHTML = `<div class="encabezado"><h2>Administración</h2></div>
-    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" onclick="location.hash='#/admin?v=${k}'">${n}</button>`).join('')}</div>
+    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" data-ir="#/admin?v=${k}">${n}</button>`).join('')}</div>
     <div id="cuerpo"></div>`;
   if (pestana === 'usuarios' && esAdmin) await pestanaUsuarios();
   else if (pestana === 'procesos' && esAdmin) await pestanaProcesos();
@@ -46,7 +46,7 @@ rutas.admin = async function () {
 };
 
 const mostrarClave = (titulo, quien, clave) => modal(titulo, `<p>Entrégale esta clave temporal a <b>${esc(quien)}</b>. Se pide cambiarla al primer ingreso y no se vuelve a mostrar.</p>
-  <input readonly value="${esc(clave)}" class="mono" style="font-size:18px" onfocus="this.select()">`, { aceptar: 'Listo' });
+  <input readonly value="${esc(clave)}" class="mono" style="font-size:18px" data-seleccionar>`, { aceptar: 'Listo' });
 
 async function pestanaUsuarios() {
   // Si el servidor aún no tiene cargos (no se reinició tras actualizar), la pestaña sigue funcionando y lo avisa

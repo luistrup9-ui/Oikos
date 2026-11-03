@@ -180,9 +180,13 @@ Pruebas: `node prueba-auditorias.js` (servidor corriendo y base limpia).
   - Desactivar o cambiar el rol cierra las sesiones abiertas del usuario.
   - Siempre debe quedar al menos un administrador activo.
 - **Mi clave** (botón de la barra superior): mínimo 8 caracteres, con letras y números.
-- **Seguridad del ingreso**: 5 intentos fallidos bloquean ese usuario durante 15 minutos.
+- **Seguridad del ingreso**: 5 intentos fallidos con una cuenta la bloquean 15 minutos desde ese equipo (quien falla con tu correo no te impide entrar desde el tuyo), y 20 fallidos en total bloquean ese equipo.
+- **Seguridad del navegador**: la política (`public/.htaccess`) solo admite scripts propios, sin código dentro del HTML; ver «Interfaz y seguridad del navegador» en `CLAUDE.md`.
 - **Importar datos** (Calidad y administrador), desde CSV (guarda tu Excel como CSV):
-  - Tipos: usuarios y correos de usuarios existentes (solo administrador; un Líder importado queda con su proceso y los subprocesos de ese proceso), documentos del listado maestro, riesgos, controles y mediciones históricas de indicadores.
+  - Tipos: usuarios y correos de usuarios existentes (solo administrador), documentos del listado maestro, riesgos, controles y mediciones históricas de indicadores.
+  - Usuarios (columnas `correo, nombre, cargo, rol, proceso, procesos`): la persona ingresa con su correo y cada una recibe una clave temporal (se muestra una sola vez y se descarga en CSV).
+    Un Líder queda con su `proceso` y los subprocesos de ese proceso; si en `procesos` pones los que lidera separados por `|`, queda con exactamente esos.
+    El `cargo` se vincula a la estructura de cargos si coincide su nombre o su código (CAR-…); si no, queda como texto.
   - El archivo se revisa fila por fila y solo se importa si **todas** las filas son válidas.
   - Cada tipo tiene su plantilla descargable.
   - Aceptan coma decimal, fechas AAAA-MM-DD o DD/MM/AAAA, y nombre o sigla de proceso, tipo y clase.

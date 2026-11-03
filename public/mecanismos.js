@@ -11,7 +11,7 @@ const fechaLarga = f => f ? new Date(f + 'T12:00').toLocaleDateString('es-CO', {
 const hora12 = h => { if (!h) return ''; const [H, M] = h.split(':').map(Number); return `${(H % 12) || 12}:${String(M).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; };
 const parametro = n => new URLSearchParams(location.hash.split('?')[1] || '').get(n);
 const pestanasPagina = (tabs, activa, base) => `<div class="tabs">${tabs.map(([k, n]) =>
-  `<button class="${k === activa ? 'activo' : ''}" onclick="location.hash='${base}?t=${k}'">${esc(n)}</button>`).join('')}</div>`;
+  `<button class="${k === activa ? 'activo' : ''}" data-ir="${base}?t=${k}">${esc(n)}</button>`).join('')}</div>`;
 const estadoComp = e => `<span class="est-comp ${esc(e)}">${esc(e)}</span>`;
 const diasTxt = d => `<span class="dias ${d < 0 ? 'atraso' : ''}">${d > 0 ? '+' : ''}${d}</span>`;
 const barraAvance = v => `<span class="avance"><i style="width:${Math.max(0, Math.min(100, v || 0))}%"></i></span> ${pct(v)}`;
@@ -37,7 +37,7 @@ rutas.mecanismos = async function () {
           <button class="btn" id="expActas"><i class="ic ic-excel"></i> Exportar</button></div>
         <div class="tabla-wrap"><table><thead><tr><th>Tipo</th><th>Mecanismo</th><th>ID</th><th>Acta/Consecutivo</th><th>Fecha</th><th>Hora inicio</th>
         <th>Hora fin</th><th>Estado</th><th>Usuario</th><th>Lugar</th><th># Invitados</th><th># Asistentes</th><th>% Asistencia</th><th># Archivos</th></tr></thead><tbody>
-        ${lista.map(a => `<tr class="click" onclick="location.hash='#/acta/${a.id}'"><td>${esc(a.tipo)}</td><td>${esc(a.mecanismo)}</td><td>${a.id}</td>
+        ${lista.map(a => `<tr class="click" data-ir="#/acta/${a.id}"><td>${esc(a.tipo)}</td><td>${esc(a.mecanismo)}</td><td>${a.id}</td>
           <td><a href="#/acta/${a.id}">${esc(a.codigo)}</a></td><td>${esc(a.fecha)}</td><td>${hora12(a.hora_inicio)}</td><td>${hora12(a.hora_fin)}</td>
           <td>${esc(a.estado)}</td><td>${esc(a.autor_usuario)}</td><td>${esc(a.lugar)}</td><td class="num">${a.invitados}</td><td class="num">${a.asistentes}</td>
           <td class="num">${pct(a.asistencia)}</td><td class="num">${a.n_archivos}</td></tr>`).join('')}</tbody></table></div>
@@ -54,7 +54,7 @@ rutas.mecanismos = async function () {
       const filas = lista.filter(m => m.estadisticas.actas);
       $('#resultado').innerHTML = `<div class="tabla-wrap"><table><thead><tr><th>Tipo</th><th>Nombre</th><th># actas</th><th># actividades</th>
         <th># actividades cerradas</th><th>Cumplimiento</th><th>Invitados</th><th>Asistentes</th><th>Asistencia</th></tr></thead><tbody>
-        ${filas.map(m => { const s = m.estadisticas; return `<tr class="click" onclick="location.hash='#/mecanismo/${m.id}?t=seguimiento'">
+        ${filas.map(m => { const s = m.estadisticas; return `<tr class="click" data-ir="#/mecanismo/${m.id}?t=seguimiento">
           <td>${esc(m.tipo)}</td><td>${esc(m.nombre)}</td><td class="num">${s.actas}</td><td class="num">${s.actividades}</td><td class="num">${s.cerradas}</td>
           <td class="num">${pct(s.cumplimiento ?? 0)}</td><td class="num">${s.invitados}</td><td class="num">${s.asistentes}</td><td class="num">${pct(s.asistencia ?? 0)}</td></tr>`; }).join('')}
         </tbody></table></div>${filas.length ? '' : '<p class="vacio">Ningún mecanismo tiene actas todavía.</p>'}`;
@@ -65,7 +65,7 @@ rutas.mecanismos = async function () {
     $('#resultado').innerHTML = `<div class="controles">${esCalidad() ? `<label class="en-linea">Tipo <select id="tipoNuevo">${TIPOS_MEC.map(x => `<option>${x}</option>`).join('')}</select></label>
         <button class="btn primario" id="adicionar">Adicionar</button>` : ''}<span class="espacio"></span></div>
       <div class="tabla-wrap"><table><thead><tr><th>ID</th><th>Tipo</th><th>Nombre</th><th># Actas</th><th>Administradores</th><th>Otros</th><th>Activo</th></tr></thead><tbody>
-      ${lista.map(m => `<tr class="click" onclick="location.hash='#/mecanismo/${m.id}'"><td>${m.id}</td><td>${esc(m.tipo)}</td><td><a href="#/mecanismo/${m.id}">${esc(m.nombre)}</a></td>
+      ${lista.map(m => `<tr class="click" data-ir="#/mecanismo/${m.id}"><td>${m.id}</td><td>${esc(m.tipo)}</td><td><a href="#/mecanismo/${m.id}">${esc(m.nombre)}</a></td>
         <td class="num">${m.n_actas}</td><td>${personas(m, true) || '—'}</td><td>${personas(m, false) || '—'}</td><td>${m.activo ? 'Sí' : 'No'}</td></tr>`).join('')}
       </tbody></table></div>${lista.length ? '' : `<p class="vacio">No hay mecanismos con estos criterios.${esCalidad() ? '' : ' Aquí ves solo los de los que haces parte.'}</p>`}`;
     $('#adicionar')?.addEventListener('click', () => editarMecanismo({ tipo: $('#tipoNuevo').value, activo: 1, codificacion: 'Auto', patron: '%C', padding: 3,
@@ -135,7 +135,7 @@ rutas.mecanismo = async function (id) {
       <button class="btn" id="expActas"><i class="ic ic-excel"></i> Exportar</button></div>
       <div class="tabla-wrap"><table><thead><tr><th>Actas</th><th>Fecha</th><th>Estado</th>${m.mostrar_tipo ? '<th>Tipo de reunión</th>' : ''}
         <th>Compromisos</th><th>Asistencia</th><th>Cumplimiento compromisos</th></tr></thead><tbody>
-      ${m.actas.map(a => `<tr class="click" onclick="location.hash='#/acta/${a.id}'"><td><a href="#/acta/${a.id}">Acta / ${esc(a.codigo)}</a> <span class="gris">/ ${esc(a.autor_usuario || '')}</span></td>
+      ${m.actas.map(a => `<tr class="click" data-ir="#/acta/${a.id}"><td><a href="#/acta/${a.id}">Acta / ${esc(a.codigo)}</a> <span class="gris">/ ${esc(a.autor_usuario || '')}</span></td>
         <td>${esc(a.fecha)}</td><td>${esc(a.estado)}</td>${m.mostrar_tipo ? `<td>${esc(a.tipo_reunion)}</td>` : ''}<td class="num">${a.compromisos}</td>
         <td class="num">${pct(a.asistencia)}</td><td class="num">${a.compromisos ? pct(a.cumplimiento) : ''}</td></tr>`).join('')}</tbody></table></div>
       ${m.actas.length ? '' : '<p class="vacio">Este mecanismo aún no tiene actas.</p>'}`;
@@ -161,9 +161,9 @@ rutas.mecanismo = async function (id) {
       <div class="tarjeta"><h3>Cumplimiento de compromisos por sesión</h3>${barras('cumplimiento')}</div>`;
   }
   vista.innerHTML = `<h2 class="titulo-form">${esc(m.nombre)} <span class="gris">· ${esc(m.tipo)}${m.activo ? '' : ' (inactivo)'}</span></h2>
-    <div class="controles"><button class="btn" onclick="location.hash='#/mecanismos'">Volver</button>
+    <div class="controles"><button class="btn" data-ir="#/mecanismos">Volver</button>
       ${m.permisos.administra ? '<button class="btn" id="editarMec">Editar</button>' : ''}
-      <button class="btn" onclick="window.print()"><i class="ic ic-imprimir"></i> Exportar a PDF</button><span class="espacio"></span></div>
+      <button class="btn" data-imprimir><i class="ic ic-imprimir"></i> Exportar a PDF</button><span class="espacio"></span></div>
     ${pestanasPagina([['general', 'Información General'], ['actas', 'Actas'], ['seguimiento', 'Seguimiento'], ['estadisticas', 'Estadísticas']], t, base)}
     ${cuerpo}`;
   $('#editarMec')?.addEventListener('click', () => editarMecanismo(m));
@@ -184,7 +184,7 @@ function tablaCompromisos(lista, conActa) {
   if (!lista.length) return '<p class="vacio">La búsqueda no produjo resultados.</p>';
   return `<div class="tabla-wrap"><table><thead><tr><th>Actividad</th>${conActa ? '<th>Acta</th>' : ''}<th>Responsables</th><th>Fin</th><th>Estado</th>
     <th>Avance</th><th>Días</th></tr></thead><tbody>
-    ${lista.map(c => `<tr class="click" onclick="location.hash='#/compromiso/${c.id}'"><td><a href="#/compromiso/${c.id}">${c.numero}. ${esc(c.nombre)}</a></td>
+    ${lista.map(c => `<tr class="click" data-ir="#/compromiso/${c.id}"><td><a href="#/compromiso/${c.id}">${c.numero}. ${esc(c.nombre)}</a></td>
       ${conActa ? `<td>${esc(c.acta_codigo)}</td>` : ''}<td>${esc(c.responsables || '—')}</td><td class="${c.vencido ? 'rojo' : ''}">${esc(c.fecha_fin)}</td>
       <td>${estadoComp(c.estado)}</td><td>${barraAvance(c.avance)}</td><td>${diasTxt(c.dias)}</td></tr>`).join('')}</tbody></table></div>`;
 }
@@ -251,7 +251,7 @@ rutas.acta = async function (id) {
     const lista = a.compromisos_lista;
     cuerpo = `${p.compromisos && mec.tiene_compromisos ? '<div class="controles"><button class="btn primario" id="nuevoComp">Adicionar compromiso</button><span class="espacio"></span></div>' : ''}
       ${lista.length ? `<div class="tabla-wrap"><table class="arbol"><thead><tr><th>Actividad</th><th>Fin</th><th>Seguimiento</th><th></th></tr></thead><tbody>
-        ${lista.map(c => `<tr class="click" onclick="location.hash='#/compromiso/${c.id}'"><td><a href="#/compromiso/${c.id}">${c.numero}. ${esc(c.nombre)}</a>
+        ${lista.map(c => `<tr class="click" data-ir="#/compromiso/${c.id}"><td><a href="#/compromiso/${c.id}">${c.numero}. ${esc(c.nombre)}</a>
           ${c.arrastrado ? `<span class="chip" title="Compromiso abierto de un acta anterior">${esc(c.acta_codigo)}</span>` : ''}
           <br><span class="gris">• ${esc(c.responsables || '—')}</span></td><td class="${c.vencido ? 'rojo' : ''}">${esc(c.fecha_fin)}</td>
           <td>${barraAvance(c.avance)}</td><td>${diasTxt(c.dias)}</td></tr>`).join('')}</tbody></table></div>
@@ -259,12 +259,12 @@ rutas.acta = async function (id) {
   }
   vista.innerHTML = `<h2 class="titulo-form">${esc(mec.tipo)} - ${esc(mec.nombre)}<br><small>Acta / ${esc(a.codigo)}</small>
       <span class="est-acta ${esc(a.estado)}">${esc(a.estado)}</span></h2>
-    <div class="controles"><button class="btn" onclick="location.hash='#/mecanismo/${mec.id}?t=actas'">Volver</button>
+    <div class="controles"><button class="btn" data-ir="#/mecanismo/${mec.id}?t=actas">Volver</button>
       ${p.actas ? '<button class="btn" id="adicionarActa">Adicionar Acta</button>' : ''}
       ${p.editar ? '<button class="btn" id="editarActa">Editar Acta</button>' : ''}
       ${p.administra && a.estado === 'Abierta' ? '<button class="btn" data-estado="cerrar">Cerrar</button><button class="btn peligro" data-estado="anular">Anular</button>' : ''}
       ${p.administra && a.estado !== 'Abierta' ? '<button class="btn" data-estado="reabrir">Reabrir</button>' : ''}
-      <button class="btn icono-solo" title="Exportar a PDF / imprimir" onclick="window.print()"><i class="ic ic-imprimir"></i></button>
+      <button class="btn icono-solo" title="Exportar a PDF / imprimir" data-imprimir><i class="ic ic-imprimir"></i></button>
       <span class="espacio"></span>
       <select id="otraActa" aria-label="Ir a otra acta">${a.otras_actas.map(o => `<option value="${o.id}" ${o.id === a.id ? 'selected' : ''}>${esc(o.codigo)} / ${esc(o.fecha)}</option>`).join('')}</select></div>
     ${pestanasPagina([['planeacion', 'Planeación'], ['desarrollo', 'Desarrollo'], ...(mec.tiene_compromisos ? [['compromisos', 'Compromisos']] : [])], t, base)}
@@ -329,7 +329,7 @@ rutas.compromiso = async function (id) {
         <div class="pre">${esc(s.descripcion)}</div>${s.archivo_nombre ? `<a href="api/compromisos/${c.id}/seguimientos/${s.id}/archivo" download>📎 ${esc(s.archivo_nombre)}</a>` : ''}</div>`).join('')
       : '<p class="vacio">Sin seguimientos.</p>'}`;
   vista.innerHTML = `<h2 class="titulo-form">${esc(c.mecanismo)}<br><small>${esc(c.acta_codigo)} (${esc(c.acta_fecha)})</small> ${estadoComp(c.estado)}</h2>
-    <div class="controles"><button class="btn" onclick="location.hash='#/acta/${c.acta_id}?t=compromisos'">Volver al acta</button>
+    <div class="controles"><button class="btn" data-ir="#/acta/${c.acta_id}?t=compromisos">Volver al acta</button>
       ${c.permisos.seguimiento ? '<button class="btn primario" id="seguir">Adicionar seguimiento</button>' : ''}
       ${c.permisos.reprogramar ? '<button class="btn" id="reprogramar">Reprogramar</button>' : ''}
       ${c.permisos.editar ? '<button class="btn" id="editarComp">Editar</button>' : ''}

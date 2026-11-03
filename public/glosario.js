@@ -79,7 +79,7 @@ rutas.buscar = async function () {
     ? `<p class="sub">${res.resultados.length} resultado(s) para «${esc(res.texto)}»</p>` + Object.entries(grupos).map(([tipo, filas]) => `
       <div class="tarjeta"><h3>${esc(tipo)} <span class="chip">${filas.length}</span></h3>
         <div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Nombre</th><th>Proceso / grupo</th><th>Detalle</th></tr></thead><tbody>
-        ${filas.map(x => `<tr class="click" onclick="location.hash='${enlace(x)}'"><td class="mono">${esc(x.codigo || '—')}</td>
+        ${filas.map(x => `<tr class="click" data-ir="${esc(enlace(x))}"><td class="mono">${esc(x.codigo || '—')}</td>
           <td>${esc(x.titulo)}</td><td>${esc(x.proceso || '—')}</td><td>${esc(String(x.detalle ?? '').slice(0, 120))}</td></tr>`).join('')}
         </tbody></table></div></div>`).join('')
     : `<p class="vacio">No se encontró nada para «${esc(res.texto)}».</p>`;

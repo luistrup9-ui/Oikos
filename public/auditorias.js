@@ -30,7 +30,7 @@ rutas.auditorias = async function () {
     $('#resultado').innerHTML = `<div class="kpis">${ca.estados.map(s => `<div class="kpi"><b>${lista.filter(e => e.estado === s).length}</b><span>${s}</span></div>`).join('')}</div>
       ${lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Evaluación</th><th>Tipo</th><th>Plan</th><th>Procesos</th>
         <th>Evaluador</th><th>Fechas</th><th>Estado</th><th class="num">Hallazgos</th></tr></thead><tbody>
-        ${lista.map(e => `<tr class="click" onclick="location.hash='#/auditoria/${e.id}'"><td class="mono">${esc(e.codigo)}</td><td>${esc(e.nombre)}</td>
+        ${lista.map(e => `<tr class="click" data-ir="#/auditoria/${e.id}"><td class="mono">${esc(e.codigo)}</td><td>${esc(e.nombre)}</td>
           <td>${esc(e.tipo)}</td><td>${e.anio}</td><td><small>${esc(e.procesos || '—')}</small></td>
           <td>${esc(e.evaluador)}<br><small class="sub">${esc(e.auditor || e.auditor_externo || '')}</small></td>
           <td><small>${fecha(e.fecha_inicio)} → ${fecha(e.fecha_fin)}</small></td><td><span class="chip">${esc(e.estado)}</span></td>
@@ -87,7 +87,7 @@ rutas.auditoria = async function () {
         ${e.es_auditor && k < 3 && (k < 2 || e.puede_editar) ? `<button class="btn primario" data-ir="${ca.estados[k + 1]}">Pasar a ${ca.estados[k + 1]} →</button>` : ''}
         ${e.puede_editar && e.estado !== 'Terminada' ? '<button class="btn" id="editar">Editar</button>' : ''}
         ${e.puede_editar && e.estado === 'Planeación' ? '<button class="btn peligro" id="eliminar">Eliminar</button>' : ''}
-        <button class="btn" onclick="window.print()">Informe / PDF</button></div></div>
+        <button class="btn" data-imprimir>Informe / PDF</button></div></div>
     ${pasos(ca.estados, e.estado)}
     <div class="ficha">
       <div>
@@ -108,7 +108,7 @@ rutas.auditoria = async function () {
         </div>
         <div class="tarjeta"><h3>Hallazgos (${e.hallazgos.length})</h3>
           ${e.hallazgos.length ? `<table><thead><tr><th>Código</th><th>Tipo</th><th>Proceso</th><th>Requisito</th><th>Descripción</th><th class="num">Acciones</th></tr></thead><tbody>
-            ${e.hallazgos.map(h => `<tr class="click" onclick="location.hash='#/hallazgo/${h.id}'"><td class="mono">${esc(h.codigo)}</td><td>${etiquetaHallazgo(h.tipo)}</td>
+            ${e.hallazgos.map(h => `<tr class="click" data-ir="#/hallazgo/${h.id}"><td class="mono">${esc(h.codigo)}</td><td>${etiquetaHallazgo(h.tipo)}</td>
               <td>${esc(h.proceso)}</td><td class="mono">${esc(h.requisito)}</td><td>${esc(h.descripcion)}</td><td class="num">${h.total_acciones}</td></tr>`).join('')}</tbody></table>`
             : '<p class="sub">Los hallazgos se generan solos al marcar una pregunta como no conforme u observación.</p>'}</div>
       </div>
@@ -180,7 +180,7 @@ rutas.acciones = async function () {
     <div class="encabezado"><h2>Acciones correctivas y de mejora</h2>
       <div class="acciones">${pestana !== 'estadisticas' ? '<button class="btn" id="exportar">Exportar CSV</button>' : ''}
         ${yo.rol !== 'consulta' ? '<button class="btn primario" id="nuevoH">Registrar hallazgo</button>' : ''}</div></div>
-    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" onclick="location.hash='#/acciones?v=${k}'">${n}</button>`).join('')}</div>
+    <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" data-ir="#/acciones?v=${k}">${n}</button>`).join('')}</div>
     <div id="cuerpo"></div>`;
   $('#nuevoH')?.addEventListener('click', () => nuevoHallazgo());
   const cuerpo = $('#cuerpo');
@@ -213,7 +213,7 @@ rutas.acciones = async function () {
       lista = await api('/hallazgos?' + qs(valoresForm($('#filtros'))));
       $('#resultado').innerHTML = lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Tipo</th><th>Origen</th><th>Proceso</th>
         <th>Requisito</th><th>Descripción</th><th>Fecha</th><th class="num">Acciones</th></tr></thead><tbody>
-        ${lista.map(h => `<tr class="click" onclick="location.hash='#/hallazgo/${h.id}'"><td class="mono">${esc(h.codigo)}</td><td>${etiquetaHallazgo(h.tipo)}</td>
+        ${lista.map(h => `<tr class="click" data-ir="#/hallazgo/${h.id}"><td class="mono">${esc(h.codigo)}</td><td>${etiquetaHallazgo(h.tipo)}</td>
           <td>${esc(h.origen)}${h.evaluacion_codigo ? `<br><small class="mono">${esc(h.evaluacion_codigo)}</small>` : ''}</td><td>${esc(h.proceso)}</td>
           <td class="mono">${esc(h.requisito)}</td><td>${esc(h.descripcion)}</td><td>${fecha(h.fecha)}</td>
           <td class="num">${h.total_acciones ? `${h.acciones_cerradas}/${h.total_acciones}` : (h.tipo.startsWith('No conformidad') ? '<span class="faltan">Sin acción</span>' : '0')}</td></tr>`).join('')}
@@ -240,7 +240,7 @@ rutas.acciones = async function () {
     lista = await api('/acciones?' + qs(valoresForm($('#filtros'))));
     $('#resultado').innerHTML = lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Tipo</th><th>Hallazgo</th><th>Proceso</th>
       <th>Responsable</th><th>Compromiso</th><th>Avance</th><th>Estado</th></tr></thead><tbody>
-      ${lista.map(a => `<tr class="click" onclick="location.hash='#/accion/${a.id}'"><td class="mono">${esc(a.codigo)}</td><td>${esc(a.tipo)}</td>
+      ${lista.map(a => `<tr class="click" data-ir="#/accion/${a.id}"><td class="mono">${esc(a.codigo)}</td><td>${esc(a.tipo)}</td>
         <td>${etiquetaHallazgo(a.hallazgo_tipo)}<br><small>${esc(a.hallazgo)}</small></td><td>${esc(a.proceso)}</td><td>${esc(a.responsable)}</td>
         <td>${fecha(a.fecha_compromiso)}${a.vencida ? '<br><span class="faltan">Vencida</span>' : ''}</td>
         <td>${a.actividades_cumplidas}/${a.total_actividades}</td>
@@ -285,7 +285,7 @@ rutas.hallazgo = async function () {
       <dt>Proceso</dt><dd>${esc(h.proceso)}</dd><dt>Requisito</dt><dd>${esc(h.requisito) || '—'}</dd>
       <dt>Descripción</dt><dd>${esc(h.descripcion)}</dd><dt>Evidencia</dt><dd>${esc(h.evidencia) || '—'}</dd>
       <dt>Registrado</dt><dd>${esc(h.registrado_por)} · ${fecha(h.fecha)}</dd></dl></div>
-    <div class="tarjeta"><h3>Acciones</h3>${acciones.length ? `<table><tbody>${acciones.map(a => `<tr class="click" onclick="location.hash='#/accion/${a.id}'">
+    <div class="tarjeta"><h3>Acciones</h3>${acciones.length ? `<table><tbody>${acciones.map(a => `<tr class="click" data-ir="#/accion/${a.id}">
       <td class="mono">${esc(a.codigo)}</td><td>${esc(a.tipo)}</td><td>${esc(a.responsable)}</td><td>${fecha(a.fecha_compromiso)}</td>
       <td><span class="chip">${esc(a.estado)}</span></td></tr>`).join('')}</tbody></table>`
       : `<p class="sub">${h.tipo.startsWith('No conformidad') ? 'Esta no conformidad necesita una acción correctiva.' : 'Sin acciones.'}</p>`}</div>`;
@@ -400,10 +400,10 @@ rutas.inicio = async function () {
   await inicioConIndicadores();
   const p = await api('/auditorias-pendientes');
   if (p.evaluaciones.length) vista.insertAdjacentHTML('beforeend', `<div class="tarjeta"><h3>Evaluaciones donde eres auditor</h3><table><tbody>
-    ${p.evaluaciones.map(e => `<tr class="click" onclick="location.hash='#/auditoria/${e.id}'"><td class="mono">${esc(e.codigo)}</td><td>${esc(e.nombre)}</td>
+    ${p.evaluaciones.map(e => `<tr class="click" data-ir="#/auditoria/${e.id}"><td class="mono">${esc(e.codigo)}</td><td>${esc(e.nombre)}</td>
       <td>${fecha(e.fecha_inicio)}</td><td><span class="chip">${esc(e.estado)}</span></td></tr>`).join('')}</tbody></table></div>`);
   if (p.acciones.length) vista.insertAdjacentHTML('beforeend', `<div class="tarjeta"><h3>Acciones correctivas y de mejora</h3><table><tbody>
-    ${p.acciones.map(a => `<tr class="click" onclick="location.hash='#/accion/${a.id}'"><td class="mono">${esc(a.codigo)}</td><td>${esc(a.hallazgo)}</td>
+    ${p.acciones.map(a => `<tr class="click" data-ir="#/accion/${a.id}"><td class="mono">${esc(a.codigo)}</td><td>${esc(a.hallazgo)}</td>
       <td>${fecha(a.fecha_compromiso)}${a.vencida ? ' <span class="faltan">Vencida</span>' : ''}</td>
       <td><span class="chip">${a.estado === 'Verificación' && a.responsable_id !== yo.id ? 'Por verificar' : esc(a.estado)}</span></td></tr>`).join('')}</tbody></table></div>`);
 };
