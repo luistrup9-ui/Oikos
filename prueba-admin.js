@@ -295,6 +295,14 @@ const PRUEBA = { admin: ['admin@oikos.test', 'admin123'], calidad: ['gestor@oiko
   esperar('Con «procesos» lidera exactamente esos y su principal es el proceso, no el subproceso', numeros(i2.procesos) === numeros([sub.id, pid('FIN')]) && i2.proceso_id === pid('FIN'), i2);
   r = await login('imp2', 'imp2@oikos.test', r.claves?.[1]?.clave_temporal ?? '');
   esperar('Y entra con su correo y la clave temporal', r.ok, r);
+  // Quien ya está registrado no se duplica (pasó al importar en una base donde las personas ya existían sin correo)
+  const total0 = (await llamar('admin', '/usuarios')).length;
+  r = await llamar('admin', '/importar/usuarios', { csv: 'correo;nombre;rol\notra1@oikos.test;MARIA GOMEZ;Colaborador\nnueva1@oikos.test;Persona Nueva;Colaborador\nnueva2@oikos.test;persona nueva;Colaborador', aplicar: true });
+  esperar('Usuarios: no crea a quien ya existe (sin importar mayúsculas ni tildes) ni lo repite en el archivo',
+    !r.aplicado && r.errores === 2 && r.validas === 1 && /ya hay un usuario llamado/.test(r.filas[0].error) && /mgomez/.test(r.filas[0].error) && /repetido en el archivo/.test(r.filas[2].error), r.filas);
+  esperar('Usuarios: y no se creó ninguna cuenta', (await llamar('admin', '/usuarios')).length === total0, 'cambió el total');
+  r = await llamar('admin', '/importar/usuarios', { csv: 'correo;nombre;rol\nnueva1@oikos.test;Persona Nueva;Colaborador', aplicar: true });
+  esperar('Usuarios: la persona realmente nueva sí se importa', r.aplicado && r.claves.length === 1, r);
 
   r = await llamar('calidad', '/importar/documentos/plantilla');
   esperar('Descarga la plantilla CSV', r.texto?.includes('"codigo";"nombre";"tipo"'), r);

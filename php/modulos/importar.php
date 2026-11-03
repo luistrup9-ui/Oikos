@@ -85,13 +85,19 @@ function importadores(): array {
             'ejemplo' => ['jperez@metalcof.co', 'Juan Pérez', 'Jefe de Producción', 'Líder', 'Producción', ''],
             'ayuda' => 'rol: Administrador, Gestor de Calidad, Líder o Colaborador. El Líder necesita proceso: con «proceso» lidera ese proceso y sus subprocesos; si quieres marcarle exactamente otros, '
                 . 'pon en «procesos» los que lidera separados por | (ej. Contabilidad | Tesorería). El cargo se vincula a la estructura de cargos si coincide su nombre o su código (CAR-…); si no, queda como texto. '
-                . 'La persona ingresa con su correo; a cada usuario se le genera una clave temporal.',
+                . 'La persona ingresa con su correo; a cada usuario se le genera una clave temporal. Quien ya está registrado no se crea otra vez: para ponerle el correo usa «Completar correos» o el tipo «Correos de usuarios que ya existen».',
             'preparar' => function (array $f, array &$ctx) {
                 $correo = limpiar_correo($f['correo']);
                 if (!preg_match(CORREO_RE, $correo)) fila_mal("correo: “{$f['correo']}” no es válido");
                 if (uno('SELECT 1 FROM usuarios WHERE correo = ?', $correo)) fila_mal("el correo $correo ya existe");
                 if (isset($ctx['vistos'][$correo])) fila_mal("“{$correo}” está repetido en el archivo");
                 $ctx['vistos'][$correo] = true;
+                // Una persona que ya está registrada (aunque sin correo) no se crea otra vez: se le pone el correo a la que existe
+                $existente = buscar_en($ctx['usuarios'], $f['nombre'], ['nombre']);
+                if ($existente) fila_mal("ya hay un usuario llamado “{$f['nombre']}” ({$existente['usuario']}" . ($existente['correo'] ? ", {$existente['correo']}" : ', sin correo') . '); '
+                    . ($existente['correo'] ? 'si es otra persona, escribe su nombre completo' : 'para ponerle el correo usa «Completar correos» o Importar datos → «Correos de usuarios que ya existen»'));
+                if (isset($ctx['nombres'][norm($f['nombre'])])) fila_mal("“{$f['nombre']}” está repetido en el archivo");
+                $ctx['nombres'][norm($f['nombre'])] = true;
                 $alias = ['administrador' => 'admin', 'gestor de calidad' => 'lider_calidad', 'gestor' => 'lider_calidad', 'lider de calidad' => 'lider_calidad',
                     'lider' => 'lider_proceso', 'lider de proceso' => 'lider_proceso', 'colaborador' => 'consulta'];
                 $rol = $alias[norm($f['rol'])] ?? elegir($f['rol'], ROLES, 'rol');
