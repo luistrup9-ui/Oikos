@@ -72,6 +72,12 @@ function ahora(): string { return gmdate('Y-m-d H:i:s'); }
 function hace_segundos(int $s): string { return gmdate('Y-m-d H:i:s', time() + $s); }
 
 // ---------- Errores HTTP ----------
+// Siguiente código de una serie (R-PRO-07, EV-2026-03…): uno más que el mayor número usado con ese prefijo, aunque se hayan borrado registros
+function siguiente_codigo(string $tabla, string $prefijo, int $digitos = 2): string {
+    $n = (int)uno("SELECT COALESCE(MAX(CAST(SUBSTRING(codigo, ?) AS UNSIGNED)), 0) n FROM $tabla WHERE codigo LIKE ?", strlen($prefijo) + 1, $prefijo . '%')['n'];
+    return $prefijo . str_pad((string)($n + 1), $digitos, '0', STR_PAD_LEFT);
+}
+
 final class ErrorHttp extends Exception {
     public int $estado;
     public function __construct(int $estado, string $msg) { parent::__construct($msg); $this->estado = $estado; }

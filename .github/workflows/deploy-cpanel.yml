@@ -1,0 +1,78 @@
+# Despliegue de OIKOS en cPanel (https://metalcostos.co/oikos/). Cada push a main (o el botón «Run workflow»):
+#   1) trae el código a public_html/oikos con «Git Version Control» de cPanel (API UAPI VersionControl/update),
+#   2) aplica las migraciones de la base (POST a /oikos/migrar.php con el token),
+#   3) comprueba /oikos/healthz: ok y 0 migraciones pendientes.
+# Cualquier paso con error deja el Action en rojo. Solo toca public_html/oikos y la base metalcos_oikos: nunca php/config.php ni oikos_datos.
+# Secretos del repositorio (Settings → Secrets and variables → Actions): CPANEL_HOST, CPANEL_USER, CPANEL_TOKEN, MIGRACION_TOKEN.
+# La clave de cPanel NO se usa aquí: solo un token de API propio (cPanel → Manage API Tokens, «oikos-deploy»).
+name: Desplegar en cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Un despliegue a la vez: dos push seguidos se ponen en fila (no se cancelan a medias)
+concurrency:
+  group: desplegar-cpanel
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARPETA: /home/metalcos/public_html/oikos
+      RAMA: main
+      DIRECCION: https://metalcostos.co/oikos
+    steps:
+      - name: 1. Traer el código a cPanel
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # cPanel responde HTTP 200 aunque la llamada falle: lo que manda es "status" (1 = bien) y "errors" del JSON
+          api() { curl -sS --max-time 180 -G -H "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" "https://${CPANEL_HOST}:2083/execute/VersionControl/$1" "${@:2}"; }
+
+          resp=$(api update --data-urlencode "repository_root=${CARPETA}" --data-urlencode "branch=${RAMA}")
+          echo "$resp" | jq '{status, errors, messages}'
+          [ "$(echo "$resp" | jq -r '.status // 0')" = "1" ] || { echo "::error::cPanel no pudo actualizar el repositorio"; exit 1; }
+
+          # Comprobar que de verdad quedó este commit (o uno más nuevo) y no el anterior
+          info=$(api retrieve)
+          sha=$(echo "$info" | jq -r --arg r "$CARPETA" '[.data[]? | select(.repository_root == $r)] | first | .last_update.identifier // empty')
+          [ -n "$sha" ] || { echo "::error::No pude leer qué commit quedó en cPanel"; echo "$info" | jq '{status, errors}'; exit 1; }
+          echo "Commit en cPanel: $sha"
+          estado=$(curl -fsS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${sha}" | jq -r '.status')
+          case "$estado" in
+            identical|ahead) echo "Bien: cPanel tiene este commit o uno más nuevo ($estado)";;
+            *) echo "::error::cPanel quedó en $sha, que no incluye $GITHUB_SHA ($estado)"; exit 1;;
+          esac
+
+      - name: 2. Aplicar las migraciones de la base
+        env:
+          MIGRACION_TOKEN: ${{ secrets.MIGRACION_TOKEN }}
+        run: |
+          set -euo pipefail
+          codigo=$(curl -sS --max-time 600 -X POST -H "X-Migracion-Token: ${MIGRACION_TOKEN}" -o respuesta.json -w '%{http_code}' "${DIRECCION}/migrar.php" || true)
+          cat respuesta.json 2>/dev/null || true; echo
+          if [ "$codigo" != "200" ] || ! jq -e '.ok == true' respuesta.json >/dev/null 2>&1; then
+            echo "::error::Las migraciones fallaron (HTTP ${codigo:-sin respuesta}). La base quedó como antes de la que falló; hay un respaldo previo en el hosting."
+            exit 1
+          fi
+          echo "Migraciones aplicadas: $(jq -r '.aplicadas | length' respuesta.json)"
+
+      - name: 3. Revisar que OIKOS responde
+        run: |
+          set -euo pipefail
+          resp=$(curl -fsS --max-time 60 --retry 3 --retry-delay 5 --retry-all-errors "${DIRECCION}/healthz")
+          echo "$resp" | jq '{ok, php, migraciones_pendientes}'
+          echo "$resp" | jq -e '.ok == true and .migraciones_pendientes == 0' >/dev/null \
+            || { echo "::error::/healthz no está ok o quedan migraciones pendientes"; exit 1; }

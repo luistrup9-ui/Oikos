@@ -8,8 +8,8 @@ Sistema que replica la gestión documental, de procesos, indicadores, riesgos, a
 |---|---|
 | `public/` | Lo único público: las pantallas (`index.html`, `*.js`, `styles.css`) y la API en `public/api/index.php` |
 | `php/` | El servidor: `nucleo.php` (base de datos, sesión, enrutador), `alcance.php` (qué ve cada rol), `modulos/*.php` (un archivo por módulo) y `config.php` |
-| `mysql/` | `esquema.sql` (todas las tablas), `datos-iniciales.sql` (Metalcof sin usuarios) y `datos-prueba.sql` (base de desarrollo con cuentas de prueba) |
-| `herramientas/` | `instalar.php`, `crear-admin.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
+| `mysql/` | `esquema.sql` (todas las tablas), `datos-iniciales.sql` (Metalcof sin usuarios), `datos-prueba.sql` (base de desarrollo con cuentas de prueba) y `migraciones/` (cambios de la base posteriores a la instalación) |
+| `herramientas/` | `instalar.php`, `crear-admin.php`, `migrar.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
 
 ## Arrancar en el equipo (XAMPP)
 1. Crea la base `oikos` y carga los datos: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123`
@@ -239,7 +239,18 @@ La guía completa está en **[DESPLIEGUE.md](DESPLIEGUE.md)**: cPanel con PHP + 
 
 - **Instalar**: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123` (base vacía) o `php herramientas/migrar-sqlite-a-mysql.php sgi.db` (datos anteriores).
 - **Respaldos**: Administración → Respaldos, o `php herramientas/respaldar.php` (en el Cron de cPanel, cada día). Restaurar: `php herramientas/restaurar.php <copia>.tar.gz`.
-- `/healthz` responde sin sesión, para monitoreo, y dice qué módulos tiene el servidor.
+- `/healthz` responde sin sesión, para monitoreo, y dice qué módulos tiene el servidor y cuántas migraciones están pendientes.
+
+## Migraciones de la base de datos
+Todo cambio de la base (tabla, columna, índice o dato de catálogo que deba existir en el hosting) va en un archivo **nuevo**
+`mysql/migraciones/NNN_descripcion.sql`. Nunca se edita una migración ya subida; nunca `DROP`, `TRUNCATE` ni `DELETE` de datos sin una
+migración revisada a mano; y también se actualiza `mysql/esquema.sql`. Se prueba en el equipo con `php herramientas/migrar.php` antes del push
+(en XAMPP: `C:\xampp\php\php.exe herramientas\migrar.php`).
+- Se aplican en orden y una sola vez cada una; la tabla `migraciones_aplicadas` (archivo, fecha, sha) lleva el registro. Si un archivo ya aplicado cambia, se avisa y no se hace nada.
+- Antes de aplicar hay una copia de seguridad automática; si una migración falla, se detiene y dice cuál.
+- En el hosting las aplica `public/migrar.php` (solo POST con el encabezado `X-Migracion-Token`, igual a `migracion_token` de `php/config.php`) después de cada push a `main`.
+- Los registros y adjuntos que se cargan en la pantalla de OIKOS **no** van en git (el repositorio es público): los datos reales se cargan directo en el hosting.
+- Reglas completas y cómo escribirlas: `CLAUDE.md` y `mysql/migraciones/LEEME.md`.
 
 Pruebas (desarrollo): `node herramientas/correr-pruebas.mjs` corre las pruebas de la API contra PHP + MySQL con una base temporal.
 Las líneas «Pruebas: node prueba-…» de las secciones de arriba se corren hoy con ese comando.

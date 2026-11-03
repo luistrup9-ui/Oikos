@@ -35,8 +35,7 @@ function nuevo_codigo($procesoId, $claseId): string {
     $c = uno('SELECT sigla FROM clases_documento WHERE id = ?', $claseId);
     if (!$p || !$c) falla(400, 'Proceso o clase inválidos');
     $prefijo = "{$p['sigla']}-{$c['sigla']}-";
-    $n = (int)uno("SELECT COUNT(*) n FROM documentos WHERE codigo LIKE CONCAT(?, '%')", $prefijo)['n'] + 1;
-    return $prefijo . str_pad((string)$n, 2, '0', STR_PAD_LEFT);
+    return siguiente_codigo('documentos', $prefijo);
 }
 
 function crear_documento(array $datos, array $u): int {

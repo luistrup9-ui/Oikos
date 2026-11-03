@@ -74,7 +74,7 @@ function guardar_riesgo(Peticion $req, $id = null): array {
         return ['id' => (int)$id];
     }
     $sigla = uno('SELECT sigla FROM procesos WHERE id = ?', $b['proceso_id'])['sigla'];
-    $codigo = "R-$sigla-" . str_pad((string)((int)uno('SELECT COUNT(*) n FROM riesgos WHERE codigo LIKE ?', "R-$sigla-%")['n'] + 1), 2, '0', STR_PAD_LEFT);
+    $codigo = siguiente_codigo('riesgos', "R-$sigla-");
     return ['id' => ejecutar('INSERT INTO riesgos (empresa_id, codigo, ' . implode(', ', CAMPOS_R) . ', creado, modificado) VALUES (?, ?' . str_repeat(', ?', count(CAMPOS_R)) . ', ?, ?)',
         $req->u['empresa_id'], $codigo, ...array_merge($vals, [ahora(), ahora()]))];
 }
@@ -115,7 +115,7 @@ function guardar_control(Peticion $req, $id = null): array {
     if ($id) ejecutar('UPDATE controles SET ' . implode(', ', array_map(fn($c) => "$c = ?", CAMPOS_C)) . ' WHERE id = ?', ...array_merge($vals, [$id]));
     else {
         $sigla = uno('SELECT sigla FROM procesos WHERE id = ?', $rg['proceso_id'])['sigla'];
-        $codigo = "C-$sigla-" . str_pad((string)((int)uno('SELECT COUNT(*) n FROM controles WHERE codigo LIKE ?', "C-$sigla-%")['n'] + 1), 2, '0', STR_PAD_LEFT);
+        $codigo = siguiente_codigo('controles', "C-$sigla-");
         $id = ejecutar('INSERT INTO controles (riesgo_id, codigo, ' . implode(', ', CAMPOS_C) . ') VALUES (?, ?' . str_repeat(', ?', count(CAMPOS_C)) . ')', $rg['id'], $codigo, ...$vals);
     }
     ejecutar('UPDATE riesgos SET modificado = ? WHERE id = ?', ahora(), $rg['id']);

@@ -1,6 +1,10 @@
-# OIKOS en Apache (XAMPP): todo se sirve desde public/. Las pantallas son archivos estáticos y /api la atiende PHP
-# (public/api/index.php), que guarda en MySQL. En cPanel, la raíz del subdominio apunta directo a public/ y este archivo no se usa.
+# OIKOS en Apache (XAMPP, o cPanel en una subcarpeta como public_html/oikos): todo se sirve desde public/. Las pantallas son
+# archivos estáticos y /api la atiende PHP (public/api/index.php), que guarda en MySQL. Nada fuera de public/ sale por web.
+# Si el subdominio apunta directo a public/ (ver DESPLIEGUE.md), este archivo no se usa.
 Options -Indexes
 RewriteEngine On
-RewriteCond %{REQUEST_URI} !/public/
+# Ni .git, .github, .env ni ningún archivo oculto sale por web (solo .well-known, que usa el certificado SSL)
+RewriteRule (^|/)\.(?!well-known/) - [F,L]
+# Lo que ya apunta a public/ sigue su camino; todo lo demás (php/, mysql/, herramientas/, datos/…) se manda a public/, donde no existe → 404
+RewriteRule ^public(/|$) - [L]
 RewriteRule ^(.*)$ public/$1 [L]

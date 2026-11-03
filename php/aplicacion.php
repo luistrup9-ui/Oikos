@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/nucleo.php';
 require_once __DIR__ . '/alcance.php';
 require_once __DIR__ . '/correo.php';
+require_once __DIR__ . '/migraciones.php';
 
 // Tareas que corren después de enviar la respuesta (p. ej. el correo de recuperación)
 function despues_de_responder(?callable $fn = null): array {
@@ -20,7 +21,9 @@ $R = new Rutas();
 foreach (MODULOS as $m) require __DIR__ . "/modulos/$m.php";
 $R->get('/healthz', function () {
     bd()->query('SELECT 1');
-    return ['ok' => true, 'php' => PHP_VERSION, 'modulos' => MODULOS];
+    // migraciones_pendientes: cuántas de mysql/migraciones/ faltan por aplicar (null si la carpeta o el registro no cuadran)
+    $m = estado_migraciones();
+    return ['ok' => true, 'php' => PHP_VERSION, 'modulos' => MODULOS, 'migraciones_pendientes' => $m['error'] ? null : count($m['pendientes'])];
 }, true);
 
 // Cabeceras de seguridad (las mismas de la versión Node)
@@ -56,8 +59,11 @@ try {
 } catch (ErrorHttp $e) {
     json_respuesta($e->estado, ['error' => $e->getMessage()]);
 } catch (Throwable $e) {
+    // El detalle (SQL, rutas, servidor) queda solo en el registro; a la persona le llega un mensaje entendible
     error_log('OIKOS: ' . $e);
-    json_respuesta(500, ['error' => $e->getMessage()]);
+    if ($e instanceof PDOException && in_array((int)($e->errorInfo[1] ?? $e->getCode()), [2002, 2003, 2006, 1045, 1049], true))
+        json_respuesta(503, ['error' => 'No se pudo conectar con la base de datos. Intenta de nuevo en un momento o avisa al administrador.']);
+    else json_respuesta(500, ['error' => 'Ocurrió un error inesperado. Intenta de nuevo; si se repite, avisa al administrador.']);
 }
 
 // Lo que no debe demorar la respuesta

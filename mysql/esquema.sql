@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS reinicios_clave (
 CREATE TABLE IF NOT EXISTS intentos_login (clave VARCHAR(190) PRIMARY KEY, n INT NOT NULL, hasta BIGINT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS pedidos_clave (id INT PRIMARY KEY AUTO_INCREMENT, clave VARCHAR(190) NOT NULL, momento BIGINT NOT NULL, KEY pedidos_clave_clave (clave)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Registro de las migraciones de mysql/migraciones/ ya aplicadas (php/migraciones.php también la crea si falta)
+CREATE TABLE IF NOT EXISTS migraciones_aplicadas (archivo VARCHAR(190) PRIMARY KEY, fecha DATETIME NOT NULL, sha CHAR(64) NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS tipos_documento (id INT PRIMARY KEY AUTO_INCREMENT, nombre VARCHAR(200) NOT NULL, sigla VARCHAR(20) NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS clases_documento (id INT PRIMARY KEY AUTO_INCREMENT, nombre VARCHAR(200) NOT NULL, sigla VARCHAR(20) NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS estados (id VARCHAR(30) PRIMARY KEY, nombre VARCHAR(200) NOT NULL, orden INT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

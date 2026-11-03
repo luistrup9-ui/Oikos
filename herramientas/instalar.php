@@ -7,6 +7,7 @@
 declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require __DIR__ . '/../php/nucleo.php';
+require __DIR__ . '/../php/migraciones.php';
 
 [, $correo, $clave] = $argv + [null, '', ''];
 $correo = mb_strtolower(trim((string)$correo));
@@ -17,10 +18,11 @@ $pdo = bd();
 if ($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN)) { fwrite(STDERR, "La base de datos ya tiene tablas: la instalación es solo para una base vacía.\n"); exit(1); }
 
 foreach (['esquema.sql', 'datos-iniciales.sql'] as $archivo) {
-    $sql = preg_replace('/^--.*$/m', '', file_get_contents(__DIR__ . "/../mysql/$archivo"));
-    foreach (preg_split('/;\s*\n/', $sql) as $s) if (trim($s) !== '') $pdo->exec($s);
+    foreach (dividir_sql(file_get_contents(__DIR__ . "/../mysql/$archivo")) as $s) $pdo->exec($s);
     echo "Cargado mysql/$archivo\n";
 }
+// El esquema ya trae el efecto de las migraciones que existen: se anotan como aplicadas (las nuevas que lleguen después sí se corren)
+if ($n = registrar_migraciones_existentes()) echo "Anotadas como aplicadas: $n migración(es) de mysql/migraciones\n";
 $usuario = preg_replace('/[^a-z0-9._-]+/', '.', explode('@', $correo)[0]) ?: 'admin';
 ejecutar("INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, rol, clave, activo, debe_cambiar) VALUES (1, ?, ?, 'Administrador', 'Administrador del sistema', 'admin', ?, 1, 1)",
     substr($usuario, 0, 30), $correo, hash_clave($clave));

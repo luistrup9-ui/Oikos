@@ -56,8 +56,15 @@ Navegador ──HTTPS──▶ Apache (cPanel)
 
 ## Actualizar el sistema
 Trae el código nuevo (Pull en Git™ Version Control o sube los archivos). No hay nada que reiniciar: PHP toma los cambios al instante.
-Si un cambio trae tablas o columnas nuevas, vendrá con su script en `mysql/` y se dirá en el mensaje de la actualización.
-Comprueba con `/healthz` qué módulos tiene el servidor.
+Si un cambio trae tablas o columnas nuevas, vendrá como una migración en `mysql/migraciones/` (ver README, «Migraciones de la base de datos»):
+se aplica con `php herramientas/migrar.php`, o sola mediante `public/migrar.php` cuando el despliegue es automático (Action de GitHub).
+Comprueba con `/healthz` qué módulos tiene el servidor y que no queden migraciones pendientes.
+
+### Instalación en una subcarpeta (p. ej. `public_html/oikos`)
+Si OIKOS no tiene subdominio propio, se clona el repositorio en `public_html/oikos`: el `.htaccess` de la raíz manda todo a `public/` y
+bloquea `.git`, `php/`, `mysql/`, `herramientas/` y `datos/`. En ese caso pon `datos_dir` **fuera de `public_html`** (p. ej. `/home/USUARIO/oikos_datos`)
+para que adjuntos y respaldos no queden bajo el código que se actualiza. Con `migracion_token` en `php/config.php` y el Action
+`.github/workflows/deploy-cpanel.yml`, cada push a `main` trae el código, aplica las migraciones y comprueba `/healthz`.
 
 ## En XAMPP (para trabajar en el equipo)
 1. Base `oikos` en phpMyAdmin (o `herramientas/migrar-sqlite-a-mysql.php` / `instalar.php` como arriba).
@@ -80,6 +87,7 @@ Comprueba con `/healthz` qué módulos tiene el servidor.
 | `sesion_horas` | Duración de la sesión | 12 |
 | `smtp_host`, `smtp_puerto`, `smtp_usuario`, `smtp_clave`, `smtp_remitente` | Correo para «¿Olvidaste tu clave?» (587 STARTTLS o 465 SSL). En Gmail / Microsoft 365, una contraseña de aplicación. Sin `smtp_host` la petición le aparece al administrador | — |
 | `respaldos_conservar`, `respaldo_automatico`, `respaldo_hora` | Copias de seguridad | 30 / false / 2 |
+| `migracion_token` | Clave larga (mínimo 32 caracteres) que `public/migrar.php` exige en el encabezado `X-Migracion-Token`. Vacía = esa dirección queda apagada | vacía |
 
 ## Pruebas (solo desarrollo)
 `node herramientas/correr-pruebas.mjs` corre las pruebas automáticas contra PHP + MySQL con una base temporal `oikos_prueba`

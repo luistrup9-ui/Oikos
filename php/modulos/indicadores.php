@@ -103,8 +103,7 @@ function guardar_indicador(Peticion $req, $id = null): array {
     if (!isset(PERIODOS[$b['frecuencia'] ?? ''])) falla(400, 'Frecuencia inválida');
     if (empty($b['codigo'])) {
         $sigla = uno('SELECT sigla FROM procesos WHERE id = ?', $b['proceso_id'])['sigla'];
-        $n = (int)uno('SELECT COUNT(*) n FROM indicadores WHERE codigo LIKE ?', "IND-$sigla-%")['n'] + 1;
-        $b['codigo'] = "IND-$sigla-" . str_pad((string)$n, 2, '0', STR_PAD_LEFT);
+        $b['codigo'] = siguiente_codigo('indicadores', "IND-$sigla-");
     }
     $vals = array_map(fn($c) => $b[$c] ?? null, CAMPOS_IND);
     if ($id) {

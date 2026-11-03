@@ -22,7 +22,7 @@ const PREGUNTAS_ISO = [
 function hoy(): string { return substr(ahora(), 0, 10); }
 function en_lista(array &$w, array &$p, string $col, $v): void { $l = lista($v); if ($l) { $w[] = "$col IN (" . marcas($l) . ')'; array_push($p, ...$l); } }
 function consecutivo(string $tabla, string $prefijo): string {
-    return $prefijo . str_pad((string)((int)uno("SELECT COUNT(*) n FROM $tabla WHERE codigo LIKE ?", $prefijo . '%')['n'] + 1), 2, '0', STR_PAD_LEFT);
+    return siguiente_codigo($tabla, $prefijo);
 }
 
 // ================= Evaluaciones =================

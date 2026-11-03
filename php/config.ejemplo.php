@@ -30,4 +30,9 @@ return [
     'respaldos_conservar' => 30,
     'respaldo_automatico' => false,
     'respaldo_hora' => 2,
+
+    // Despliegue automático: clave larga al azar (mínimo 32 caracteres) que el Action de GitHub manda en el encabezado
+    // X-Migracion-Token a public/migrar.php para aplicar las migraciones de la base. Vacía = esa dirección queda apagada.
+    // Es la misma que el secreto MIGRACION_TOKEN de GitHub; no la pongas en el repositorio.
+    'migracion_token' => '',
 ];

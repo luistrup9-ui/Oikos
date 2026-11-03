@@ -11,14 +11,19 @@ function intentos_de(string $clave): ?array {
 $R->post('/api/login', function (Peticion $req) {
     // Se ingresa con el correo corporativo (o con el usuario de siempre); el campo del formulario se llama «usuario»
     $nombre = mb_strtolower(txt($req->b('usuario') ?? $req->b('correo')));
-    $reg = intentos_de($nombre);
-    if ($reg && $reg['n'] >= 5) falla(429, 'Demasiados intentos fallidos. Espera 15 minutos.');
+    // Dos contadores: la cuenta desde este equipo (5 fallos) y el equipo contra cualquier cuenta (20 fallos).
+    // Así nadie puede bloquear a otra persona desde su propio equipo, y probar muchas cuentas también se frena.
+    $claveCuenta = 'c:' . $req->ip . '|' . $nombre; $claveEquipo = 'ip:' . $req->ip;
+    $reg = intentos_de($claveCuenta); $regEquipo = intentos_de($claveEquipo);
+    if (($reg && $reg['n'] >= 5) || ($regEquipo && $regEquipo['n'] >= 20)) falla(429, 'Demasiados intentos fallidos. Espera 15 minutos.');
     $u = uno(str_contains($nombre, '@') ? 'SELECT * FROM usuarios WHERE correo = ?' : 'SELECT * FROM usuarios WHERE usuario = ?', $nombre);
     if (!$u || !$u['activo'] || !verificar((string)($req->b('clave') ?? ''), $u['clave'], $u['id'])) {
-        ejecutar('REPLACE INTO intentos_login (clave, n, hasta) VALUES (?,?,?)', $nombre, ($reg ? $reg['n'] : 0) + 1, (int)(microtime(true) * 1000) + 15 * 60 * 1000);
+        $hasta = (int)(microtime(true) * 1000) + 15 * 60 * 1000;
+        ejecutar('REPLACE INTO intentos_login (clave, n, hasta) VALUES (?,?,?)', $claveCuenta, ($reg ? $reg['n'] : 0) + 1, $hasta);
+        ejecutar('REPLACE INTO intentos_login (clave, n, hasta) VALUES (?,?,?)', $claveEquipo, ($regEquipo ? $regEquipo['n'] : 0) + 1, $hasta);
         falla(401, 'Correo o clave incorrectos');
     }
-    ejecutar('DELETE FROM intentos_login WHERE clave = ?', $nombre);
+    ejecutar('DELETE FROM intentos_login WHERE clave = ?', $claveCuenta);
     $t = bin2hex(random_bytes(24));
     ejecutar('INSERT INTO sesiones (token, usuario_id, creada) VALUES (?,?,?)', $t, $u['id'], ahora());
     cookie_sesion($t, sesion_segundos());
