@@ -158,6 +158,7 @@ function json_respuesta(int $estado, $datos): void {
 function descargar(string $ruta, string $nombre): void {
     if (!is_file($ruta)) falla(404, 'Archivo no encontrado');
     header('Content-Type: application/octet-stream');
+    header('X-Content-Type-Options: nosniff');
     header('Content-Length: ' . filesize($ruta));
     header("Content-Disposition: attachment; filename=\"" . str_replace('"', '', preg_replace('/[^\x20-\x7e]/', '_', $nombre)) . "\"; filename*=UTF-8''" . rawurlencode($nombre));
     readfile($ruta);

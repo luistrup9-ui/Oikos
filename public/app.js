@@ -2,6 +2,8 @@
 const $ = (s, el = document) => el.querySelector(s);
 const vista = $('#vista');
 let yo = null, cat = null;
+// Tipos de adjunto que acepta el servidor (la misma lista que EXTENSIONES_PERMITIDAS en php/modulos/documentos.php)
+const ACEPTA = '.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.rtf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.zip,.rar,.7z,.dwg,.dxf,.msg,.eml,.mp4,.mp3,.vsd,.vsdx';
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fecha = v => v ? esc(String(v).slice(0, 16)) : '—';
@@ -277,7 +279,7 @@ async function documento(id) {
   $('#subir')?.addEventListener('click', intentar(async () => {
     const dlg = $('#modal'), f = $('#modalForm');
     f.innerHTML = `<h3>Archivo de la versión ${d.version}</h3>
-      <label>Archivo<input type="file" name="archivo" required></label>
+      <label>Archivo<input type="file" name="archivo" accept="${ACEPTA}" required></label>
       <label>Descripción de los cambios<textarea name="cambios" placeholder="${d.version === 1 ? 'Versión inicial' : 'Qué cambió respecto a la versión anterior'}"></textarea></label>
       <div class="acciones" style="justify-content:flex-end"><button class="btn" value="cancelar" formnovalidate>Cancelar</button>
       <button class="btn primario" value="ok">Subir</button></div>`;

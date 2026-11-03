@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 const TAMANO_MAXIMO = 25 * 1024 * 1024; // 25 MB por archivo, como en Node
+// Tipos de adjunto que se aceptan (por extensión); lo demás (.php, .html, .exe, .js...) se rechaza
+const EXTENSIONES_PERMITIDAS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'xlsm', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'txt', 'csv', 'rtf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'zip', 'rar', '7z', 'dwg', 'dxf', 'msg', 'eml', 'mp4', 'mp3', 'vsd', 'vsdx'];
 
 // ---------- Motor de flujo ----------
 function transiciones_disponibles(array $doc, array $u): array {
@@ -115,7 +117,7 @@ $R->put('/api/documentos/:id', function (Peticion $req) {
     ejecutar('UPDATE documentos SET nombre = ?, tipo_id = ?, clase_id = ?, origen = ?, descripcion = ?, responsable_id = ?, fecha_vencimiento = ?, modificado = ? WHERE id = ?',
         ($b['nombre'] ?? null) ?: $d['nombre'], ($b['tipo_id'] ?? null) ?: $d['tipo_id'], ($b['clase_id'] ?? null) ?: $d['clase_id'], ($b['origen'] ?? null) ?: $d['origen'],
         array_key_exists('descripcion', $b) && $b['descripcion'] !== null ? $b['descripcion'] : $d['descripcion'],
-        ($b['responsable_id'] ?? null) ?: $d['responsable_id'], ($b['fecha_vencimiento'] ?? null) ?: null, ahora(), $d['id']);
+        ($b['responsable_id'] ?? null) ?: $d['responsable_id'], array_key_exists('fecha_vencimiento', $b) ? ($b['fecha_vencimiento'] ?: null) : $d['fecha_vencimiento'], ahora(), $d['id']);
     return ['ok' => true];
 });
 
@@ -125,6 +127,8 @@ function guardar_subida(array $files, string $campo = 'archivo'): ?array {
     if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return null;
     if ($f['error'] === UPLOAD_ERR_INI_SIZE || $f['error'] === UPLOAD_ERR_FORM_SIZE || $f['size'] > TAMANO_MAXIMO) falla(413, 'El archivo supera el tamaño permitido');
     if ($f['error'] !== UPLOAD_ERR_OK) falla(400, 'No se pudo recibir el archivo');
+    $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, EXTENSIONES_PERMITIDAS, true)) falla(415, 'Este tipo de archivo no se puede adjuntar. Se aceptan PDF, Word, Excel, PowerPoint, imágenes, texto, comprimidos y similares.');
     $nombre = bin2hex(random_bytes(16));
     if (!move_uploaded_file($f['tmp_name'], dir_archivos() . '/' . $nombre) && !rename($f['tmp_name'], dir_archivos() . '/' . $nombre)) falla(500, 'No se pudo guardar el archivo');
     return [$nombre, $f['name'], (int)$f['size']];

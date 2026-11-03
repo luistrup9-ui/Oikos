@@ -583,3 +583,37 @@ dialog form > .acciones:last-child { position: sticky; bottom: 0; z-index: 5; ma
 dialog form > h3:first-child { padding-right: 68px; }
 dialog form { grid-auto-rows: max-content; align-content: start; }
 .integrantes { flex: none; min-height: 200px; }
+
+/* ---- Ojo para ver la clave ---- */
+.clave-ojo { position: relative; display: block; }
+.clave-ojo input { width: 100%; box-sizing: border-box; padding-right: 48px; }
+.clave-ojo .ojo {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; background: transparent; color: var(--ui-ink-3, #6b8284); cursor: pointer; transition: background .2s, color .2s;
+}
+.clave-ojo .ojo:hover { background: rgba(0, 164, 160, .14); color: #00706d; }
+.clave-ojo .ojo:focus-visible { outline: 2px solid #00a4a0; outline-offset: 1px; }
+.clave-ojo .ojo svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- Editor de la ficha del proceso: filas de secciones y de entradas/salidas ---- */
+.fila-sec, .fila-es {
+  display: grid; gap: 10px; align-items: start; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--ui-line); border-radius: 22px; background: rgba(255, 255, 255, .6);
+}
+.fila-sec { grid-template-columns: minmax(130px, 200px) minmax(0, 1fr) auto; }
+.fila-sec textarea, .fila-es textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.fila-sec input, .fila-es input, .fila-es select { min-width: 0; width: 100%; box-sizing: border-box; }
+.fila-es { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fila-es [name="es_actividad"] { grid-column: 1 / 3; grid-row: 1; }
+.fila-es [name="es_ciclo"] { grid-column: 3; grid-row: 1; }
+.fila-es .quitar { grid-column: 4; grid-row: 1; justify-self: end; }
+.fila-es [name="es_entradas"] { grid-column: 1 / 3; grid-row: 2; }
+.fila-es [name="es_salidas"] { grid-column: 3 / 5; grid-row: 2; }
+@media (max-width: 640px) {
+  .fila-sec { grid-template-columns: minmax(0, 1fr); }
+  .fila-sec .quitar, .fila-es .quitar { justify-self: start; }
+  .fila-es { grid-template-columns: minmax(0, 1fr) 84px; }
+  .fila-es [name="es_actividad"] { grid-column: 1; grid-row: auto; }
+  .fila-es [name="es_ciclo"] { grid-column: 2; grid-row: auto; }
+  .fila-es [name="es_entradas"], .fila-es [name="es_salidas"] { grid-column: 1 / 3; grid-row: auto; }
+  .fila-es .quitar { grid-column: 1 / 3; grid-row: auto; }
+}

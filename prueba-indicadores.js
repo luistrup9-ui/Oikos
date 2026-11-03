@@ -21,9 +21,12 @@ const esperar = (nombre, cond, detalle) => { console.log((cond ? 'OK   ' : 'FALL
   let lista = await llamar('calidad', '/indicadores?anio=2026');
   esperar('Carga los 15 indicadores de Metalcof', lista.length === 15, lista.length);
   const energia = lista.find(i => i.codigo === 'IND-SIG-04');
-  esperar('Energía: último 16,91 (Jun), previo 115,07, semáforo rojo',
-    energia.ultimo.valor === 16.91 && energia.ultimo.etiqueta === 'Jun' && energia.previo.valor === 115.07 && energia.semaforo === 'rojo', energia.ultimo);
-  esperar('Energía: mayo (115,07 ≥ 90) en verde', energia.serie[4].semaforo === 'verde', energia.serie[4]);
+  // El semáforo sigue el sentido del indicador (Descendente: menor es mejor; Ascendente: mayor es mejor) y su tolerancia, no un color fijo
+  const colorEsperado = (v, ind) => { const t = (ind.tolerancia ?? 10) / 100, m = ind.meta;
+    return ind.sentido === 'Descendente' ? (v <= m ? 'verde' : v <= m * (1 + t) ? 'amarillo' : 'rojo') : (v >= m ? 'verde' : v >= m * (1 - t) ? 'amarillo' : 'rojo'); };
+  esperar('Energía: último 16,91 (Jun), previo 115,07, semáforo según su sentido',
+    energia.ultimo.valor === 16.91 && energia.ultimo.etiqueta === 'Jun' && energia.previo.valor === 115.07 && energia.semaforo === colorEsperado(16.91, energia), energia);
+  esperar('Energía: mayo (115,07 frente a la meta 90) con el semáforo de su sentido', energia.serie[4].semaforo === colorEsperado(115.07, energia), energia.serie[4]);
 
   const conf = lista.find(i => i.codigo === 'IND-PRO-01');
   let r = await llamar('produccion', `/indicadores/${conf.id}/mediciones`, { anio, periodo: 1, numerador: 90, denominador: 100 });

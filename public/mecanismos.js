@@ -228,7 +228,7 @@ rutas.acta = async function (id) {
     return `<div class="archivos">${l.length ? l.map(f => `<div class="archivo"><a href="api/actas/${a.id}/archivos/${f.id}" download>📄 ${esc(f.nombre)}</a>
       <span class="gris">${esc(f.usuario || '')} — ${(f.tamano / 1024).toFixed(2)} KB · ${esc(String(f.fecha).slice(0, 16))}</span>
       ${p.editar ? `<button class="btn chico peligro" data-quitar="${f.id}">Quitar</button>` : ''}</div>`).join('') : '<p class="gris">Sin archivos adjuntos.</p>'}
-      ${p.editar ? `<label class="btn chico subir">Adjuntar archivo<input type="file" data-parte="${parte}" hidden></label>` : ''}</div>`;
+      ${p.editar ? `<label class="btn chico subir">Adjuntar archivo<input type="file" data-parte="${parte}" accept="${ACEPTA}" hidden></label>` : ''}</div>`;
   };
   let cuerpo;
   if (t === 'planeacion') {
@@ -342,7 +342,7 @@ rutas.compromiso = async function (id) {
       <label>Porcentaje de avance<input name="avance" type="number" min="0" max="100" step="any" required value="${esc(c.avance)}"></label>
       <label>Fecha<input name="fecha" type="date" required value="${new Date().toISOString().slice(0, 10)}"></label>
       <label class="ancho">Descripción<textarea name="descripcion" rows="4" required></textarea></label>
-      <label class="ancho">Archivo (opcional)<input name="archivo" type="file"></label></div>
+      <label class="ancho">Archivo (opcional)<input name="archivo" type="file" accept="${ACEPTA}"></label></div>
       <p class="gris">Con 100% el compromiso queda registrado como terminado.</p>`);
     if (!v) return;
     const fd = new FormData();
