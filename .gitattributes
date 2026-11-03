@@ -1,0 +1,2 @@
+# Los scripts de bash del servidor deben quedar siempre con saltos de línea de Linux (con CRLF no corren)
+*.sh text eol=lf

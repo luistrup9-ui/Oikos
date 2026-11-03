@@ -1,6 +1,7 @@
 <?php
 // Aplica las migraciones pendientes de la base (mysql/migraciones/*.sql). Solo POST, con el encabezado X-Migracion-Token igual a
-// migracion_token de php/config.php. Lo llama el Action de GitHub después de cada push. Responde JSON: {ok, aplicadas, pendientes, error, respaldo}.
+// migracion_token de php/config.php. Es un disparo manual opcional: el despliegue normal corre las migraciones con herramientas/desplegar.sh (cron).
+// Responde JSON: {ok, aplicadas, pendientes, error, respaldo}.
 // Sin token, con uno equivocado o con migracion_token vacío en la configuración: 403 y no hace nada.
 declare(strict_types=1);
 require __DIR__ . '/../php/migraciones.php';

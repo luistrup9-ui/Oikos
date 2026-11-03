@@ -31,8 +31,8 @@ return [
     'respaldo_automatico' => false,
     'respaldo_hora' => 2,
 
-    // Despliegue automático: clave larga al azar (mínimo 32 caracteres) que el Action de GitHub manda en el encabezado
-    // X-Migracion-Token a public/migrar.php para aplicar las migraciones de la base. Vacía = esa dirección queda apagada.
-    // Es la misma que el secreto MIGRACION_TOKEN de GitHub; no la pongas en el repositorio.
+    // OPCIONAL, para disparar las migraciones a mano por internet: clave larga al azar (mínimo 32 caracteres) que public/migrar.php exige
+    // en el encabezado X-Migracion-Token (solo POST). El despliegue normal NO la usa (lo hace el cron con herramientas/desplegar.sh).
+    // Vacía = esa dirección queda apagada (lo recomendado). No la pongas en el repositorio.
     'migracion_token' => '',
 ];

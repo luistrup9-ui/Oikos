@@ -10,5 +10,8 @@ antes-de-restaurar-*/
 php/config.php
 datos/
 
+# Registros de errores de PHP que el hosting crea junto a los scripts (en el servidor no deben estorbar al actualizar)
+error_log
+
 # Accesos reales de la base en uso (solo en este equipo; el repositorio es público)
 ACCESOS-LOCAL.md

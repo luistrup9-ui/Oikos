@@ -57,14 +57,22 @@ Navegador ──HTTPS──▶ Apache (cPanel)
 ## Actualizar el sistema
 Trae el código nuevo (Pull en Git™ Version Control o sube los archivos). No hay nada que reiniciar: PHP toma los cambios al instante.
 Si un cambio trae tablas o columnas nuevas, vendrá como una migración en `mysql/migraciones/` (ver README, «Migraciones de la base de datos»):
-se aplica con `php herramientas/migrar.php`, o sola mediante `public/migrar.php` cuando el despliegue es automático (Action de GitHub).
-Comprueba con `/healthz` qué módulos tiene el servidor y que no queden migraciones pendientes.
+se aplica con `php herramientas/migrar.php`, o sola cuando el despliegue es automático (ver abajo).
+Comprueba con `/healthz` qué módulos tiene el servidor, qué `commit` tiene, que no queden `migraciones_pendientes` y que `despliegue_ok` sea true.
 
 ### Instalación en una subcarpeta (p. ej. `public_html/oikos`)
 Si OIKOS no tiene subdominio propio, se clona el repositorio en `public_html/oikos`: el `.htaccess` de la raíz manda todo a `public/` y
 bloquea `.git`, `php/`, `mysql/`, `herramientas/` y `datos/`. En ese caso pon `datos_dir` **fuera de `public_html`** (p. ej. `/home/USUARIO/oikos_datos`)
-para que adjuntos y respaldos no queden bajo el código que se actualiza. Con `migracion_token` en `php/config.php` y el Action
-`.github/workflows/deploy-cpanel.yml`, cada push a `main` trae el código, aplica las migraciones y comprueba `/healthz`.
+para que adjuntos y respaldos no queden bajo el código que se actualiza.
+
+**Despliegue automático (jalón por cron).** En cPanel → «Tareas cron» agrega, cada minuto:
+`* * * * *  /bin/bash /home/USUARIO/public_html/oikos/herramientas/desplegar.sh`
+Cada minuto el hosting pregunta a GitHub si `main` tiene un commit nuevo; si lo hay, lo trae (solo avance, nunca pisa cambios) y corre las
+migraciones. Sin novedades no hace ni escribe nada. No usa tokens ni abre nada hacia internet. Si algo falla, cPanel manda un correo (una vez por
+cada error), el detalle queda en `oikos_datos/despliegue.log` y `/healthz` muestra `despliegue_ok: false`. Las migraciones de un commit se
+intentan una sola vez: se corrigen con un commit nuevo. No edites archivos del código directo en el hosting: `git merge` se detendría.
+(Un Action de GitHub que llame a cPanel no sirve en hostings con Imunify360: lo bloquea con una página de verificación. Y como `exec` suele estar
+desactivado en PHP, el script es de bash.)
 
 ## En XAMPP (para trabajar en el equipo)
 1. Base `oikos` en phpMyAdmin (o `herramientas/migrar-sqlite-a-mysql.php` / `instalar.php` como arriba).

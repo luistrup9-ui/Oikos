@@ -88,6 +88,24 @@ function dividir_sql(string $sql): array {
     return $sentencias;
 }
 
+// ---------- Estado del despliegue (lo muestra /healthz; lo escribe herramientas/desplegar.sh en la carpeta de datos) ----------
+// Commit que está en esta carpeta: se lee de .git sin ejecutar git (en el hosting exec está desactivado)
+function commit_desplegado(): ?string {
+    $git = dirname(__DIR__) . '/.git';
+    $head = @file_get_contents("$git/HEAD");
+    if ($head === false) return null;
+    if (!preg_match('/^ref: (\S+)/', $head, $m)) return substr(trim($head), 0, 7);
+    $sha = @file_get_contents("$git/{$m[1]}");
+    if ($sha === false && preg_match('/^([0-9a-f]{40}) ' . preg_quote($m[1], '/') . '$/m', (string)@file_get_contents("$git/packed-refs"), $p)) $sha = $p[1];
+    return $sha === false ? null : substr(trim($sha), 0, 7);
+}
+// true = el último despliegue automático salió bien; false = falló (ver despliegue.log); null = aún no hay despliegue automático
+function despliegue_ok(): ?bool {
+    $d = datos_dir();
+    if (is_file("$d/despliegue.error")) return false;
+    return is_file("$d/despliegue.migrado") ? true : null;
+}
+
 // Instalación nueva: mysql/esquema.sql ya trae el efecto de todas las migraciones que existen, así que se anotan como aplicadas sin correrlas.
 function registrar_migraciones_existentes(): int {
     bd()->exec(TABLA_MIGRACIONES);

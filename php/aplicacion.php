@@ -23,7 +23,8 @@ $R->get('/healthz', function () {
     bd()->query('SELECT 1');
     // migraciones_pendientes: cuántas de mysql/migraciones/ faltan por aplicar (null si la carpeta o el registro no cuadran)
     $m = estado_migraciones();
-    return ['ok' => true, 'php' => PHP_VERSION, 'modulos' => MODULOS, 'migraciones_pendientes' => $m['error'] ? null : count($m['pendientes'])];
+    // commit: versión del código en esta carpeta; despliegue_ok: si el último despliegue automático (cron) salió bien
+    return ['ok' => true, 'php' => PHP_VERSION, 'modulos' => MODULOS, 'migraciones_pendientes' => $m['error'] ? null : count($m['pendientes']), 'commit' => commit_desplegado(), 'despliegue_ok' => despliegue_ok()];
 }, true);
 
 // Cabeceras de seguridad (las mismas de la versión Node)

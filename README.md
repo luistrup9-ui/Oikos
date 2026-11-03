@@ -9,7 +9,7 @@ Sistema que replica la gestión documental, de procesos, indicadores, riesgos, a
 | `public/` | Lo único público: las pantallas (`index.html`, `*.js`, `styles.css`) y la API en `public/api/index.php` |
 | `php/` | El servidor: `nucleo.php` (base de datos, sesión, enrutador), `alcance.php` (qué ve cada rol), `modulos/*.php` (un archivo por módulo) y `config.php` |
 | `mysql/` | `esquema.sql` (todas las tablas), `datos-iniciales.sql` (Metalcof sin usuarios), `datos-prueba.sql` (base de desarrollo con cuentas de prueba) y `migraciones/` (cambios de la base posteriores a la instalación) |
-| `herramientas/` | `instalar.php`, `crear-admin.php`, `migrar.php`, `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
+| `herramientas/` | `instalar.php`, `crear-admin.php`, `migrar.php`, `desplegar.sh` (el que corre el cron del hosting), `migrar-sqlite-a-mysql.php`, `respaldar.php`, `restaurar.php`, `servidor-local.php` y `correr-pruebas.mjs` |
 
 ## Arrancar en el equipo (XAMPP)
 1. Crea la base `oikos` y carga los datos: `php herramientas/instalar.php correo@empresa.com ClaveTemporal123`
@@ -248,7 +248,8 @@ migración revisada a mano; y también se actualiza `mysql/esquema.sql`. Se prue
 (en XAMPP: `C:\xampp\php\php.exe herramientas\migrar.php`).
 - Se aplican en orden y una sola vez cada una; la tabla `migraciones_aplicadas` (archivo, fecha, sha) lleva el registro. Si un archivo ya aplicado cambia, se avisa y no se hace nada.
 - Antes de aplicar hay una copia de seguridad automática; si una migración falla, se detiene y dice cuál.
-- En el hosting las aplica `public/migrar.php` (solo POST con el encabezado `X-Migracion-Token`, igual a `migracion_token` de `php/config.php`) después de cada push a `main`.
+- En el hosting las aplica solo `herramientas/desplegar.sh` (un cron de cPanel, cada minuto): trae el commit nuevo de `main` y corre las migraciones. Comprueba el resultado en `/healthz` (`commit`, `migraciones_pendientes` y `despliegue_ok`).
+  `public/migrar.php` (POST con el encabezado `X-Migracion-Token`, igual a `migracion_token` de `php/config.php`) queda como disparo manual opcional; sin `migracion_token` está apagado.
 - Los registros y adjuntos que se cargan en la pantalla de OIKOS **no** van en git (el repositorio es público): los datos reales se cargan directo en el hosting.
 - Reglas completas y cómo escribirlas: `CLAUDE.md` y `mysql/migraciones/LEEME.md`.
 

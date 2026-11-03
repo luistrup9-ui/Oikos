@@ -11,4 +11,4 @@ Reglas (están completas en `CLAUDE.md`):
 - **Nunca** `DROP`, `TRUNCATE` ni `DELETE` de datos sin una migración revisada a mano.
 - También se actualiza `mysql/esquema.sql`, para que una instalación nueva nazca con el cambio.
 - Una sentencia termina en `;`. No sirven `DELIMITER`, triggers ni procedimientos.
-- Se prueba en el equipo con `php herramientas/migrar.php` antes del push. En el hosting las aplica `public/migrar.php` después de cada push.
+- Se prueba en el equipo con `php herramientas/migrar.php` antes del push. En el hosting las aplica solo `herramientas/desplegar.sh` (cron, cada minuto) cuando llega el commit; si falla, se corrige con un commit nuevo.
