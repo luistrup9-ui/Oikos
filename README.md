@@ -127,10 +127,16 @@ Para tener además un archivo `.sql` (por si XAMPP se daña, o para llevar los d
 Pruebas: `node prueba-indicadores.js` (servidor corriendo y base limpia).
 
 ## Riesgos y controles
-- **Matriz de riesgos** (`#/riesgos`):
-  - Filtros por proceso, tipo (los 10 de Metalcof) y zona.
-  - Mapa de calor 5×5 con vista de riesgo absoluto o residual. Al hacer clic en una casilla se filtra la lista.
-  - Distribución por proceso o por tipo, con opción de apilar al 100 %. Exporta a CSV.
+- **Matriz de riesgos** (`#/riesgos`, `public/riesgos.js` y `public/riesgos-vistas.js`): cinco pestañas, como en Almera, que se llenan con una misma consulta (botón **Generar matrices**; también se llena sola al entrar).
+  - Filtros por proceso, tipo (los 10 de Metalcof), zona y texto. El filtro de zona mira la matriz de la pestaña abierta (la residual en «Riesgo residual» y en la exposición residual; la absoluta en las demás), así que al pasar de una a otra con la zona marcada se vuelve a consultar.
+  - **Riesgo absoluto** y **Riesgo residual**: mapa de calor 5×5, resumen por zona (torta con la cantidad y el % de cada zona, y su tabla con el Total) y la lista de escenarios (código, riesgo, proceso, tipo, probabilidad, impacto, zona, tratamiento, controles). Al hacer clic en una casilla se filtra la lista.
+  - **Agrupación** (por defecto 10): si una casilla del mapa tiene más riesgos que ese número, muestra solo la cantidad y no los códigos.
+  - **Exposición**: barras apiladas por zona (con la cantidad en cada tramo), por proceso o por tipo de riesgo, para el riesgo absoluto o el residual; la casilla **Apilar 100 %** hace que todas las barras ocupen el mismo largo.
+  - **Distribución de escenarios**: las tablas del riesgo absoluto y del residual lado a lado (zona, cantidad, % y Total).
+  - **Plan de acción** (`GET /api/riesgos-planes`, módulo `php/modulos/riesgos_vistas.php`): las actividades de los riesgos de la consulta, con proceso, código y nombre del riesgo, responsable, estado, avance, balance y las fechas **Planeado** (inicial y final) y **Ejecutado** (inicial y final). Cada fila lleva a la ficha del riesgo, donde se editan los planes.
+    - **Balance** = avance real − avance que debería llevar hoy según las fechas planeadas (0 % antes del inicio, 100 % desde el fin y, en medio, lo que va del plazo en línea recta). Negativo (en rojo) es atraso. Sin las dos fechas planeadas no hay balance. Es una fórmula inferida del ejemplo de Almera (su tabla estaba vacía): conviene confirmarla.
+  - Exporta a CSV la lista de riesgos de la consulta.
+- **Planes de acción** (de un objetivo, un indicador o un riesgo): además de las fechas planeadas llevan las **fechas ejecutadas** (`fecha_inicio_real` y `fecha_fin_real`, migración `013_planes_fechas_reales.sql`), que se capturan en el mismo formulario («Inicio ejecutado» y «Fin ejecutado»). El fin ejecutado no puede ser anterior al inicio ejecutado.
 - **Escalas**:
   - Probabilidad: 1 Rara vez … 5 Casi seguro.
   - Impacto: 1 Insignificante … 5 Catastrófico.
@@ -139,9 +145,19 @@ Pruebas: `node prueba-indicadores.js` (servidor corriendo y base limpia).
   Baja la probabilidad, el impacto o ambos, según lo que mitigue, sin bajar de 1.
 - **Ficha del riesgo**:
   - Recorrido absoluto → controles → residual.
-  - Controles: clasificación, efectividad, frecuencia, evidencia, responsables de gestión y de revisión.
-  - Reporte mensual de ejecución (monitoreo) y planes de acción.
-- **Controles** (`#/controles`): listado de todos los controles con filtros por proceso, clasificación y responsable. Exporta a CSV.
+  - Controles: clasificación, clase, efectividad, frecuencia, evidencia, responsables de gestión y de revisión.
+  - Reporte mensual de ejecución (monitoreo) y planes de acción (con sus fechas planeadas y ejecutadas).
+- **Clasificación y clase de un control** (son dos cosas distintas, como en Almera):
+  - Clasificación: Preventivo, Detectivo o Correctivo.
+  - Clase: **Actual** (el control ya funciona) o **Propuesto** (se va a implementar). Los controles que ya existían quedaron como Actual (migración `012_controles_clase.sql`).
+  - La clase no cambia el cálculo del riesgo residual: todos los controles cuentan como siempre.
+- **Controles** (`#/controles`): dos pestañas, con los mismos filtros arriba (proceso, clasificación, responsable y su rol de gestión o de revisión) que se conservan al cambiar de pestaña.
+  - **Controles**: listado de todos los controles con su clase. Exporta a CSV.
+  - **Estadísticas** (`#/controles?t=estadisticas`, módulo `php/modulos/controles_estadisticas.php` y `public/controles-estadisticas.js`):
+    - Selector **Atributo** (vacío, Proceso o Clase). Al cambiarlo se recarga solo.
+    - Gráfico de barras verticales de mayor a menor (eje «Controles»); al pasar el puntero por una barra se ve su nombre, total y porcentaje.
+    - Tabla Atributo | Total | % con una fila Total al final, buscador, columnas ordenables y «Mostrar N registros» cuando hay más de 15 filas.
+    - El Líder solo cuenta los controles de sus procesos.
 - **Permisos**:
   - Calidad: todo.
   - Líder: los riesgos y controles de su proceso y sus subprocesos.
@@ -149,7 +165,7 @@ Pruebas: `node prueba-indicadores.js` (servidor corriendo y base limpia).
   - Consulta: solo ve.
 - **Datos iniciales**: 3 riesgos marcados "(Ejemplo)". Reemplázalos por los de la matriz ES-GER-MAT-05 real.
 
-Pruebas: `node prueba-riesgos.js` (servidor corriendo y base limpia).
+Pruebas: `node prueba-riesgos.js`, `node prueba-controles.js` y `node prueba-riesgos-vistas.js` (servidor corriendo y base limpia).
 
 ## Evaluaciones (auditorías) y acciones correctivas
 - **Evaluaciones** (`#/auditorias`):
@@ -160,6 +176,17 @@ Pruebas: `node prueba-riesgos.js` (servidor corriendo y base limpia).
   - Para pasar a Ejecución hacen falta procesos, auditor y lista de verificación.
   - Para pasar a Evaluación hay que tener todas las preguntas respondidas.
   - Para terminar hacen falta conclusiones. Solo Calidad termina.
+  - **Aplicar transición** (selector en la ficha): pide observaciones y deja cada cambio en el Historial (quién, cuándo, de qué estado a cuál, usuarios de la ruta).
+- **Ficha de la evaluación** (`#/auditoria/N`), con pestañas: General, Cuestionarios, Estadísticas por nivel, Resultados, Plan de mejoramiento e Historial.
+  - Las preguntas se agrupan en **cuestionarios** dentro de cada unidad auditable (proceso). La plantilla ISO 9001 es el cuestionario «ISO 9001:2015».
+  - **Escala de 4 niveles**: Cumple (verde), Cumple parcialmente (amarillo), No cumple (rojo) y No aplica (gris). En la base se guardan los mismos valores de siempre
+    (Conforme, Observación, No conforme, No aplica), así que nada de lo anterior cambia.
+  - **% de cumplimiento** = (Cumple + ½ Cumple parcialmente) ÷ (Cumple + Cumple parcialmente + No cumple); «No aplica» y lo no respondido no cuentan.
+  - **Nivel de gestión** (semáforo): Cumplimiento Alto desde 80 %, Medio desde 60 %, Bajo por debajo. Los cortes se cambian en Administración → Evaluaciones → Semáforo.
+  - **Plan de mejoramiento**: cada hallazgo numerado con sus puntos de atención (las acciones) y su estado.
+- **Administración → Evaluaciones** (Calidad y administrador): Emisores (CAL, MC, EXT y sus opciones «por defecto»), Ciclos (empiezan vacíos), Tipos de evaluación
+  (cuál sale preseleccionado), Unidades auditables (una por proceso), Clasificación de hallazgos, Semáforo y el **Reporte de puntos de atención**
+  (filtros por año, estado del informe, evaluador, informe, estado, tipo, unidad y responsable; exporta a Excel).
 - **Lista de verificación**: preguntas propias o la plantilla ISO 9001 (10 numerales por proceso), con agenda por proceso.
   Responder "No conforme" u "Observación" genera el hallazgo automáticamente.
 - **Hallazgos**: vienen de auditorías o de otras fuentes (quejas, indicadores, riesgos, producto no conforme…).
@@ -172,7 +199,7 @@ Pruebas: `node prueba-riesgos.js` (servidor corriendo y base limpia).
 - **Estadísticas**: abiertas, vencidas, eficaces, reaperturas, % de eficacia (sirve para el indicador IND-SIG-02) y hallazgos por proceso.
 - **Mi plan de trabajo** muestra las acciones a tu cargo, las que esperan verificación y las evaluaciones donde eres auditor.
 
-Pruebas: `node prueba-auditorias.js` (servidor corriendo y base limpia).
+Pruebas: `node prueba-auditorias.js` y `node prueba-evaluaciones.js` (servidor corriendo y base limpia).
 
 ## Administración: usuarios e importación (`#/admin`)
 - **Usuarios** (solo el administrador): crear, editar rol y proceso, restablecer clave, desactivar y reactivar.
@@ -187,6 +214,7 @@ Pruebas: `node prueba-auditorias.js` (servidor corriendo y base limpia).
   - Usuarios (columnas `correo, nombre, cargo, rol, proceso, procesos`): la persona ingresa con su correo y cada una recibe una clave temporal (se muestra una sola vez y se descarga en CSV).
     Un Líder queda con su `proceso` y los subprocesos de ese proceso; si en `procesos` pones los que lidera separados por `|`, queda con exactamente esos.
     El `cargo` se vincula a la estructura de cargos si coincide su nombre o su código (CAR-…); si no, queda como texto.
+  - Controles: la columna opcional `clase` (Actual o Propuesto) se puede dejar vacía y entonces es Actual.
   - El archivo se revisa fila por fila y solo se importa si **todas** las filas son válidas.
   - Cada tipo tiene su plantilla descargable.
   - Aceptan coma decimal, fechas AAAA-MM-DD o DD/MM/AAAA, y nombre o sigla de proceso, tipo y clase.

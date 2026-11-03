@@ -20,7 +20,8 @@ const ROLES = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lide
 document.addEventListener('click', e => {
   const el = e.target.closest?.('[data-ir], [data-imprimir]');
   if (!el) return;
-  if (el.hasAttribute('data-imprimir')) window.print(); else location.hash = el.getAttribute('data-ir');
+  if (el.hasAttribute('data-imprimir')) window.print();
+  else if (/^#\//.test(el.getAttribute('data-ir'))) location.hash = el.getAttribute('data-ir'); // solo rutas internas (#/...)
 });
 document.addEventListener('focusin', e => { if (e.target.matches?.('[data-seleccionar]')) e.target.select(); });
 // Si la imagen del logo no carga, se quita (así no queda el ícono de imagen rota junto al nombre)

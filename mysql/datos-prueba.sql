@@ -225,4 +225,10 @@ INSERT INTO `usuarios` (`id`, `empresa_id`, `usuario`, `nombre`, `cargo`, `rol`,
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
+-- Evaluaciones: emisores, tipos, clasificación de hallazgos y cortes del semáforo (mismas filas que las migraciones 003, 004, 007 y 008)
+INSERT IGNORE INTO eval_emisores (empresa_id, sigla, nombre, riesgos_defecto, indicadores_defecto, tramites_defecto) VALUES (1,'CAL','Coordinador de Calidad',0,0,0),(1,'MC','Dueños de proceso',1,1,1),(1,'EXT','Externo',0,0,0);
+INSERT IGNORE INTO eval_tipos (empresa_id, nombre, por_defecto) VALUES (1,'Auditoría interna',1),(1,'Auditoría externa',0),(1,'Autoevaluación',0),(1,'Inspección',0);
+INSERT IGNORE INTO parametros (empresa_id, clave, valor) VALUES (1,'evaluacion.corte_verde','80'),(1,'evaluacion.corte_amarillo','60');
+INSERT IGNORE INTO hallazgo_clasificaciones (empresa_id, nombre) VALUES (1,'Hallazgo');
+
 SET FOREIGN_KEY_CHECKS = 1;

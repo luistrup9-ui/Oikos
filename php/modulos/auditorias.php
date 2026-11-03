@@ -25,15 +25,62 @@ function consecutivo(string $tabla, string $prefijo): string {
     return siguiente_codigo($tabla, $prefijo);
 }
 
+// Escala de 4 niveles de las listas de verificación (como en Almera). En la base se sigue guardando el valor de siempre en «resultado»;
+// aquí están el nombre, el color y el peso que cuenta para el porcentaje de cumplimiento (No aplica y sin responder no cuentan).
+const NIVELES = [
+    'Conforme' => ['nombre' => 'Cumple', 'color' => 'verde', 'peso' => 1.0],
+    'Observación' => ['nombre' => 'Cumple parcialmente', 'color' => 'amarillo', 'peso' => 0.5],
+    'No conforme' => ['nombre' => 'No cumple', 'color' => 'rojo', 'peso' => 0.0],
+    'No aplica' => ['nombre' => 'No aplica', 'color' => 'gris', 'peso' => null],
+];
+// Cortes del semáforo del nivel de gestión (Administración → Evaluaciones): verde desde X %, amarillo desde Y %, rojo por debajo
+function cortes_semaforo(int $empresa): array {
+    $p = array_column(todos("SELECT clave, valor FROM parametros WHERE empresa_id = ? AND clave IN ('evaluacion.corte_verde', 'evaluacion.corte_amarillo')", $empresa), 'valor', 'clave');
+    return ['verde' => (float)($p['evaluacion.corte_verde'] ?? 80), 'amarillo' => (float)($p['evaluacion.corte_amarillo'] ?? 60)];
+}
+// Cuenta las preguntas por nivel y calcula el % de cumplimiento = (Cumple + 0,5 × Cumple parcialmente) / (Cumple + Parcial + No cumple)
+function resumen_niveles(array $items): array {
+    $n = ['Conforme' => 0, 'Observación' => 0, 'No conforme' => 0, 'No aplica' => 0, 'sin' => 0];
+    foreach ($items as $i) $n[$i['resultado'] ?? 'sin']++;
+    $base = $n['Conforme'] + $n['Observación'] + $n['No conforme'];
+    return ['cumple' => $n['Conforme'], 'parcial' => $n['Observación'], 'no_cumple' => $n['No conforme'], 'no_aplica' => $n['No aplica'], 'sin_responder' => $n['sin'],
+        'total' => count($items), 'pct' => $base ? round(($n['Conforme'] + 0.5 * $n['Observación']) / $base * 100, 2) : null];
+}
+function nivel_gestion(?float $pct, array $cortes): array {
+    if ($pct === null) return ['color' => 'gris', 'texto' => 'Sin evaluar'];
+    if ($pct >= $cortes['verde']) return ['color' => 'verde', 'texto' => 'Cumplimiento Alto'];
+    return $pct >= $cortes['amarillo'] ? ['color' => 'amarillo', 'texto' => 'Cumplimiento Medio'] : ['color' => 'rojo', 'texto' => 'Cumplimiento Bajo'];
+}
+// Historial de la evaluación (pestaña Historial): cada cambio de estado queda con quién, cuándo, observaciones y las personas de la ruta (auditor y auditados)
+function ruta_evaluacion(int $evalId): string {
+    return implode(', ', array_column(todos('SELECT DISTINCT u.nombre FROM usuarios u WHERE u.id = (SELECT auditor_id FROM evaluaciones WHERE id = ?)
+        OR u.id IN (SELECT auditado_id FROM evaluacion_procesos WHERE evaluacion_id = ?) ORDER BY u.nombre', $evalId, $evalId), 'nombre'));
+}
+function historial_evaluacion(int $evalId, ?string $desde, string $hacia, array $u, $observaciones): void {
+    ejecutar('INSERT INTO evaluacion_historial (evaluacion_id, usuario_id, fecha, estado_inicial, estado_final, observaciones, usuarios_ruta) VALUES (?,?,?,?,?,?,?)',
+        $evalId, $u['id'], ahora(), $desde, $hacia, txt($observaciones ?? '') ?: null, ruta_evaluacion($evalId) ?: null);
+}
+
 // ================= Evaluaciones =================
-const SELECT_EVAL = "SELECT e.*, u.nombre auditor,
+const SELECT_EVAL = "SELECT e.*, u.nombre auditor, cc.nombre ciclo,
     (SELECT GROUP_CONCAT(p.nombre ORDER BY ep.proceso_id SEPARATOR ', ') FROM evaluacion_procesos ep JOIN procesos p ON p.id = ep.proceso_id WHERE ep.evaluacion_id = e.id) procesos,
     (SELECT COUNT(*) FROM hallazgos h WHERE h.evaluacion_id = e.id) total_hallazgos
-  FROM evaluaciones e LEFT JOIN usuarios u ON u.id = e.auditor_id";
+  FROM evaluaciones e LEFT JOIN usuarios u ON u.id = e.auditor_id LEFT JOIN eval_ciclos cc ON cc.id = e.ciclo_id";
 function es_auditor(array $e, array $u): bool { return es_calidad($u) || $e['auditor_id'] === $u['id']; }
 
-$R->get('/api/evaluaciones/catalogos', fn() => ['estados' => ESTADOS_EVAL, 'origenes' => ORIGENES,
-    'tipos' => ['Auditoría interna', 'Auditoría externa', 'Autoevaluación', 'Inspección'], 'evaluadores' => ['Coordinador de Calidad', 'Dueños de proceso', 'Externo']]);
+$R->get('/api/evaluaciones/catalogos', function (Peticion $req) {
+    $e = $req->u['empresa_id'];
+    $tipos = todos('SELECT nombre, por_defecto FROM eval_tipos WHERE empresa_id = ? ORDER BY id', $e);
+    $emisores = todos('SELECT sigla, nombre FROM eval_emisores WHERE empresa_id = ? ORDER BY id', $e);
+    return ['estados' => ESTADOS_EVAL, 'origenes' => ORIGENES,
+        'tipos' => $tipos ? array_column($tipos, 'nombre') : ['Auditoría interna', 'Auditoría externa', 'Autoevaluación', 'Inspección'],
+        'tipo_defecto' => array_column(array_filter($tipos, fn($t) => $t['por_defecto']), 'nombre')[0] ?? null,
+        'evaluadores' => $emisores ? array_column($emisores, 'nombre') : ['Coordinador de Calidad', 'Dueños de proceso', 'Externo'],
+        'emisores' => $emisores,
+        'ciclos' => todos('SELECT id, nombre FROM eval_ciclos WHERE empresa_id = ? AND activo = 1 ORDER BY orden, nombre', $e),
+        'clasificaciones' => todos('SELECT id, nombre FROM hallazgo_clasificaciones WHERE empresa_id = ? ORDER BY nombre', $e),
+        'niveles' => array_map(fn($k) => ['resultado' => $k] + NIVELES[$k], array_keys(NIVELES)), 'cortes' => cortes_semaforo($e)];
+});
 
 $R->get('/api/evaluaciones', function (Peticion $req) {
     $w = ['e.empresa_id = ?']; $p = [$req->u['empresa_id']];
@@ -64,6 +111,9 @@ $R->get('/api/evaluaciones/:id', function (Peticion $req) {
     $items = array_values(array_filter(todos('SELECT * FROM verificacion_items WHERE evaluacion_id = ? ORDER BY proceso_id, id', $e['id']), $propio));
     return $e + [
         'puede_editar' => es_calidad($req->u), 'es_auditor' => es_auditor($e, $req->u),
+        'emisor' => uno('SELECT sigla, nombre, riesgos_defecto, indicadores_defecto, tramites_defecto FROM eval_emisores WHERE empresa_id = ? AND nombre = ?', $e['empresa_id'], $e['evaluador']),
+        'equipo_auditado' => array_column(todos('SELECT DISTINCT u.cargo FROM evaluacion_procesos ep JOIN usuarios u ON u.id = ep.auditado_id
+          WHERE ep.evaluacion_id = ? AND u.cargo IS NOT NULL AND u.cargo <> \'\' ORDER BY u.cargo', $e['id']), 'cargo'),
         'lista_procesos' => array_values(array_filter(todos('SELECT ep.*, p.nombre, u.nombre auditado FROM evaluacion_procesos ep JOIN procesos p ON p.id = ep.proceso_id
           LEFT JOIN usuarios u ON u.id = ep.auditado_id WHERE ep.evaluacion_id = ? ORDER BY p.orden', $e['id']), $propio)),
         'items' => $items,
@@ -73,24 +123,75 @@ $R->get('/api/evaluaciones/:id', function (Peticion $req) {
     ];
 });
 
-const CAMPOS_EVAL = ['anio', 'tipo', 'nombre', 'objetivo', 'alcance', 'criterios', 'evaluador', 'auditor_id', 'auditor_externo', 'fecha_inicio', 'fecha_fin'];
+// Informe de la evaluación (pestañas Estadísticas por nivel, Resultados, Plan de mejoramiento e Historial)
+$R->get('/api/evaluaciones/:id/informe', function (Peticion $req) {
+    $e = cargar_eval($req);
+    $ids = propios($req->u); // quien no es auditor y lidera procesos ve solo lo de sus procesos
+    $propio = fn($x) => $ids === null || es_auditor($e, $req->u) || in_array($x['proceso_id'], $ids, true);
+    $items = array_values(array_filter(todos('SELECT i.*, p.nombre unidad FROM verificacion_items i JOIN procesos p ON p.id = i.proceso_id
+        WHERE i.evaluacion_id = ? ORDER BY p.orden, p.id, i.cuestionario, i.id', $e['id']), $propio));
+    $cortes = cortes_semaforo((int)$e['empresa_id']);
+    $total = resumen_niveles($items);
+    $total['nivel'] = nivel_gestion($total['pct'], $cortes);
+
+    // Estadísticas por nivel: la cantidad de cada nivel y su % sobre todas las preguntas
+    $porcentaje = fn(int $n) => $items ? round($n / count($items) * 100, 2) : 0;
+    $estadisticas = [];
+    foreach (NIVELES as $clave => $nv) {
+        $n = count(array_filter($items, fn($i) => $i['resultado'] === $clave));
+        $estadisticas[] = ['resultado' => $clave, 'nombre' => $nv['nombre'], 'color' => $nv['color'], 'n' => $n, 'pct' => $porcentaje($n)];
+    }
+    $sin = count(array_filter($items, fn($i) => $i['resultado'] === null));
+    $estadisticas[] = ['resultado' => null, 'nombre' => 'Sin responder', 'color' => 'gris', 'n' => $sin, 'pct' => $porcentaje($sin)];
+
+    // Resultados: una fila por cuestionario de cada unidad (proceso) y el reporte por unidad
+    $fila = function (array $grupo, ?string $cuestionario) use ($cortes) {
+        $r = resumen_niveles($grupo);
+        return ['proceso_id' => (int)$grupo[0]['proceso_id'], 'unidad' => $grupo[0]['unidad'], 'cuestionario' => $cuestionario] + $r + ['nivel' => nivel_gestion($r['pct'], $cortes)];
+    };
+    $porCuestionario = []; $porUnidad = [];
+    foreach ($items as $i) { $porCuestionario[$i['proceso_id'] . '|' . ($i['cuestionario'] ?? '')][] = $i; $porUnidad[$i['proceso_id']][] = $i; }
+    $resultados = array_values(array_map(fn($g) => $fila($g, $g[0]['cuestionario'] ?: 'Lista de verificación'), $porCuestionario));
+    $unidades = array_values(array_map(fn($g) => $fila($g, null), $porUnidad));
+
+    // Plan de mejoramiento: cada hallazgo numerado y, debajo, sus puntos de atención (las acciones) con su estado
+    $hallazgos = array_values(array_filter(todos('SELECT h.*, p.nombre unidad, k.nombre clasificacion FROM hallazgos h LEFT JOIN procesos p ON p.id = h.proceso_id
+        LEFT JOIN hallazgo_clasificaciones k ON k.id = h.clasificacion_id WHERE h.evaluacion_id = ? ORDER BY h.id', $e['id']), $propio));
+    $acciones = array_map('con_vencida', todos(SELECT_ACC . ' WHERE h.evaluacion_id = ? ORDER BY a.id', $e['id']));
+    $plan = [];
+    foreach ($hallazgos as $n => $h) {
+        $puntos = [];
+        foreach ($acciones as $a) if ($a['hallazgo_id'] === $h['id']) $puntos[] = ['id' => $a['id'], 'codigo' => $a['codigo'], 'tipo' => $a['tipo'], 'estado' => $a['estado'], 'responsable' => $a['responsable'],
+            'fecha_compromiso' => $a['fecha_compromiso'], 'vencida' => $a['vencida'], 'actividades' => (int)$a['total_actividades'], 'cumplidas' => (int)$a['actividades_cumplidas'],
+            'avance' => $a['total_actividades'] ? round($a['actividades_cumplidas'] / $a['total_actividades'] * 100, 2) : null];
+        $plan[] = ['numero' => $n + 1, 'id' => $h['id'], 'codigo' => $h['codigo'], 'tipo' => $h['tipo'], 'clasificacion' => $h['clasificacion'], 'unidad' => $h['unidad'],
+            'requisito' => $h['requisito'], 'descripcion' => $h['descripcion'], 'puntos' => $puntos];
+    }
+    return ['cortes' => $cortes, 'total' => $total, 'estadisticas' => $estadisticas, 'resultados' => $resultados, 'unidades' => $unidades, 'plan' => $plan,
+        'historial' => todos('SELECT h.*, u.nombre usuario FROM evaluacion_historial h LEFT JOIN usuarios u ON u.id = h.usuario_id WHERE h.evaluacion_id = ? ORDER BY h.id', $e['id'])];
+});
+
+const CAMPOS_EVAL = ['anio', 'tipo', 'nombre', 'objetivo', 'alcance', 'criterios', 'evaluador', 'auditor_id', 'auditor_externo', 'fecha_inicio', 'fecha_fin', 'ciclo_id', 'fortalezas', 'recomendaciones'];
+const CAMPOS_EVAL_OPCIONALES = ['ciclo_id', 'fortalezas', 'recomendaciones']; // si no vienen al editar, se conservan
 function guardar_eval(Peticion $req, $id = null): array {
     if (!es_calidad($req->u)) falla(403, 'Solo Calidad programa evaluaciones');
     $b = $req->body;
     if (txt($b['nombre'] ?? '') === '' || !(is_numeric($b['anio'] ?? null) && $b['anio'] + 0)) falla(400, 'Nombre y año son obligatorios');
     if (!empty($b['fecha_inicio']) && !empty($b['fecha_fin']) && $b['fecha_fin'] < $b['fecha_inicio']) falla(400, 'La fecha final no puede ser anterior a la inicial');
     if (($b['evaluador'] ?? null) === 'Externo' && txt($b['auditor_externo'] ?? '') === '') falla(400, 'Indica el auditor u organismo externo');
+    if (!empty($b['ciclo_id']) && !uno('SELECT 1 FROM eval_ciclos WHERE id = ? AND empresa_id = ?', $b['ciclo_id'], $req->u['empresa_id'])) falla(400, 'Ciclo inválido');
     $procesos = array_map('intval', lista($b['procesos'] ?? null));
-    $vals = array_map(fn($c) => $b[$c] ?? null, CAMPOS_EVAL);
-    return transaccion(function () use ($req, $id, $b, $procesos, $vals) {
+    return transaccion(function () use ($req, $id, $b, $procesos) {
+        $vals = fn(array $actual = []) => array_map(fn($c) => (in_array($c, CAMPOS_EVAL_OPCIONALES, true) && !array_key_exists($c, $b) ? ($actual[$c] ?? null) : ($b[$c] ?? null)) ?: null, CAMPOS_EVAL);
         if ($id) {
             $e = uno('SELECT * FROM evaluaciones WHERE id = ? AND empresa_id = ?', $id, $req->u['empresa_id']);
             if (!$e) falla(404, 'Evaluación no encontrada');
             if ($e['estado'] === 'Terminada') falla(400, 'Una evaluación terminada no se modifica');
-            ejecutar('UPDATE evaluaciones SET ' . implode(', ', array_map(fn($c) => "$c = ?", CAMPOS_EVAL)) . ' WHERE id = ?', ...array_merge($vals, [$id]));
+            ejecutar('UPDATE evaluaciones SET ' . implode(', ', array_map(fn($c) => "$c = ?", CAMPOS_EVAL)) . ' WHERE id = ?', ...array_merge($vals($e), [$id]));
         } else {
             $id = ejecutar('INSERT INTO evaluaciones (empresa_id, codigo, ' . implode(', ', CAMPOS_EVAL) . ') VALUES (?, ?' . str_repeat(', ?', count(CAMPOS_EVAL)) . ')',
-                $req->u['empresa_id'], consecutivo('evaluaciones', "EV-{$b['anio']}-"), ...$vals);
+                $req->u['empresa_id'], consecutivo('evaluaciones', "EV-{$b['anio']}-"), ...$vals());
+            $nuevo = true;
         }
         if (array_key_exists('procesos', $b)) {
             $actuales = array_column(todos('SELECT proceso_id FROM evaluacion_procesos WHERE evaluacion_id = ?', $id), 'proceso_id');
@@ -100,6 +201,7 @@ function guardar_eval(Peticion $req, $id = null): array {
             }
             foreach (array_diff($procesos, $actuales) as $p) ejecutar('INSERT INTO evaluacion_procesos (evaluacion_id, proceso_id) VALUES (?,?)', $id, $p);
         }
+        if (!empty($nuevo)) historial_evaluacion($id, null, 'Planeación', $req->u, 'Evaluación programada');
         return ['id' => $id];
     });
 }
@@ -140,7 +242,10 @@ $R->post('/api/evaluaciones/:id/estado', function (Peticion $req) {
             falla(400, 'Faltan preguntas de la lista de verificación por responder');
         if ($destino === 'Terminada' && txt($req->b('conclusiones') ?: $e['conclusiones']) === '') falla(400, 'Escribe las conclusiones del informe');
     }
-    ejecutar('UPDATE evaluaciones SET estado = ?, conclusiones = COALESCE(?, conclusiones) WHERE id = ?', $destino, $req->b('conclusiones'), $e['id']);
+    transaccion(function () use ($req, $e, $destino) {
+        ejecutar('UPDATE evaluaciones SET estado = ?, conclusiones = COALESCE(?, conclusiones) WHERE id = ?', $destino, $req->b('conclusiones'), $e['id']);
+        historial_evaluacion($e['id'], $e['estado'], $destino, $req->u, $req->b('observaciones'));
+    });
     return ['ok' => true];
 });
 
@@ -157,13 +262,14 @@ $R->post('/api/evaluaciones/:id/items', function (Peticion $req) {
         transaccion(function () use ($destino, $e) {
             foreach ($destino as $p) foreach (PREGUNTAS_ISO as [$requisito, $pregunta])
                 if (!uno('SELECT 1 FROM verificacion_items WHERE evaluacion_id = ? AND proceso_id = ? AND requisito = ?', $e['id'], $p, $requisito))
-                    ejecutar('INSERT INTO verificacion_items (evaluacion_id, proceso_id, requisito, pregunta) VALUES (?,?,?,?)', $e['id'], $p, $requisito, $pregunta);
+                    ejecutar('INSERT INTO verificacion_items (evaluacion_id, proceso_id, cuestionario, requisito, pregunta) VALUES (?,?,?,?,?)', $e['id'], $p, 'ISO 9001:2015', $requisito, $pregunta);
         });
         return ['ok' => true];
     }
     if (!in_array((int)$req->b('proceso_id'), $procesos, true)) falla(400, 'El proceso no hace parte de esta evaluación');
     if (txt($req->b('pregunta')) === '') falla(400, 'Escribe la pregunta');
-    return ['id' => ejecutar('INSERT INTO verificacion_items (evaluacion_id, proceso_id, requisito, pregunta) VALUES (?,?,?,?)', $e['id'], $req->b('proceso_id'), $req->b('requisito'), txt($req->b('pregunta')))];
+    return ['id' => ejecutar('INSERT INTO verificacion_items (evaluacion_id, proceso_id, cuestionario, requisito, pregunta) VALUES (?,?,?,?,?)', $e['id'], $req->b('proceso_id'),
+        txt($req->b('cuestionario') ?? '') ?: null, $req->b('requisito'), txt($req->b('pregunta')))];
 });
 $R->delete('/api/evaluaciones/:id/items/:iid', function (Peticion $req) {
     $e = cargar_eval($req); editable_lista($e, $req->u);
@@ -174,9 +280,13 @@ $R->delete('/api/evaluaciones/:id/items/:iid', function (Peticion $req) {
 function crear_hallazgo(array $d, array $u): int {
     $sigla = !empty($d['proceso_id']) ? (uno('SELECT sigla FROM procesos WHERE id = ?', $d['proceso_id'])['sigla'] ?? null) : 'GEN';
     if (!$sigla) falla(400, 'Proceso inválido');
-    return ejecutar('INSERT INTO hallazgos (empresa_id, codigo, evaluacion_id, item_id, origen, proceso_id, tipo, requisito, descripcion, evidencia, usuario_id, fecha) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    // Clasificación: la que se indique o, si no, «Hallazgo» (la de Almera) cuando existe
+    $clasificacion = !empty($d['clasificacion_id'])
+        ? (uno('SELECT id FROM hallazgo_clasificaciones WHERE id = ? AND empresa_id = ?', $d['clasificacion_id'], $u['empresa_id'])['id'] ?? falla(400, 'Clasificación de hallazgo inválida'))
+        : (uno("SELECT id FROM hallazgo_clasificaciones WHERE empresa_id = ? AND nombre = 'Hallazgo'", $u['empresa_id'])['id'] ?? null);
+    return ejecutar('INSERT INTO hallazgos (empresa_id, codigo, evaluacion_id, item_id, origen, proceso_id, tipo, requisito, descripcion, evidencia, usuario_id, fecha, clasificacion_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
         $u['empresa_id'], consecutivo('hallazgos', "H-$sigla-"), $d['evaluacion_id'] ?? null, $d['item_id'] ?? null, $d['origen'] ?? null, $d['proceso_id'] ?? null,
-        $d['tipo'] ?? null, $d['requisito'] ?? null, $d['descripcion'] ?? null, $d['evidencia'] ?? null, $u['id'], ahora());
+        $d['tipo'] ?? null, $d['requisito'] ?? null, $d['descripcion'] ?? null, $d['evidencia'] ?? null, $u['id'], ahora(), $clasificacion);
 }
 
 // Responder una pregunta: si no es conforme u observación, se genera el hallazgo automáticamente
@@ -225,11 +335,11 @@ $R->get('/api/hallazgos', function (Peticion $req) {
     if ($req->q('texto')) { $w[] = '(h.descripcion LIKE ? OR h.codigo LIKE ?)'; array_push($p, '%' . $req->q('texto') . '%', '%' . $req->q('texto') . '%'); }
     if ($req->q('sin_accion') === '1') $w[] = 'NOT EXISTS (SELECT 1 FROM acciones a WHERE a.hallazgo_id = h.id)';
     $fh = filtro($req->u, 'h.proceso_id');
-    return todos("SELECT h.*, p.nombre proceso, e.codigo evaluacion_codigo, u.nombre registrado_por,
+    return todos("SELECT h.*, p.nombre proceso, e.codigo evaluacion_codigo, u.nombre registrado_por, k.nombre clasificacion,
         (SELECT COUNT(*) FROM acciones a WHERE a.hallazgo_id = h.id) total_acciones,
         (SELECT COUNT(*) FROM acciones a WHERE a.hallazgo_id = h.id AND a.estado = 'Cerrada') acciones_cerradas
       FROM hallazgos h LEFT JOIN procesos p ON p.id = h.proceso_id LEFT JOIN evaluaciones e ON e.id = h.evaluacion_id
-      LEFT JOIN usuarios u ON u.id = h.usuario_id WHERE " . implode(' AND ', $w) . $fh['sql'] . ' ORDER BY h.id DESC', ...array_merge($p, $fh['params']));
+      LEFT JOIN usuarios u ON u.id = h.usuario_id LEFT JOIN hallazgo_clasificaciones k ON k.id = h.clasificacion_id WHERE " . implode(' AND ', $w) . $fh['sql'] . ' ORDER BY h.id DESC', ...array_merge($p, $fh['params']));
 });
 
 // Hallazgos de otras fuentes (quejas, indicadores, riesgos, producto no conforme…)

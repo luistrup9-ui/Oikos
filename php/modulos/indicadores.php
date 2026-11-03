@@ -206,6 +206,20 @@ $R->post('/api/objetivos', function (Peticion $req) {
 });
 $R->delete('/api/objetivos/:id', function (Peticion $req) { solo_calidad_plan($req); ejecutar('DELETE FROM objetivos WHERE id = ?', $req->p('id')); return ['ok' => true]; });
 
+// Fechas reales (ejecutadas) del plan, frente a las planeadas (fecha_inicio y fecha_fin): AAAA-MM-DD válidas o vacías, el fin no antes del inicio.
+// Si quien guarda no las manda (una pantalla vieja) se conservan las que ya tenía el plan.
+function fechas_reales(array $b, ?array $plan): array {
+    $f = [];
+    foreach (['fecha_inicio_real' => 'El inicio real', 'fecha_fin_real' => 'El fin real'] as $k => $nombre) {
+        if (!esta($b, $k)) { $f[] = $plan[$k] ?? null; continue; }
+        $v = txt($b[$k]);
+        if ($v !== '' && (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1]))) falla(400, "$nombre no es una fecha válida (AAAA-MM-DD)");
+        $f[] = $v === '' ? null : $v;
+    }
+    if ($f[0] && $f[1] && $f[1] < $f[0]) falla(400, 'El fin real no puede ser anterior al inicio real');
+    return $f;
+}
+
 // Planes de acción (de un objetivo, un indicador o un riesgo)
 $R->post('/api/planes-accion', function (Peticion $req) {
     $b = $req->body;
@@ -217,14 +231,16 @@ $R->post('/api/planes-accion', function (Peticion $req) {
         $a = uno('SELECT * FROM planes_accion WHERE id = ? AND empresa_id = ?', $b['id'], $req->u['empresa_id']);
         if (!$a) falla(404, 'Plan no encontrado');
         if (!es_calidad($req->u) && $a['responsable_id'] !== $req->u['id']) falla(403, 'Solo el responsable o Calidad actualizan el plan');
-        ejecutar('UPDATE planes_accion SET nombre = ?, responsable_id = ?, fecha_inicio = ?, fecha_fin = ?, avance = ?, estado = ?, observaciones = ? WHERE id = ?',
-            txt($b['nombre']), $b['responsable_id'] ?? null, $b['fecha_inicio'] ?? null, $b['fecha_fin'] ?? null, $avance, $estado, $b['observaciones'] ?? null, $b['id']);
+        $real = fechas_reales($b, $a);
+        ejecutar('UPDATE planes_accion SET nombre = ?, responsable_id = ?, fecha_inicio = ?, fecha_fin = ?, avance = ?, estado = ?, observaciones = ?, fecha_inicio_real = ?, fecha_fin_real = ? WHERE id = ?',
+            txt($b['nombre']), $b['responsable_id'] ?? null, $b['fecha_inicio'] ?? null, $b['fecha_fin'] ?? null, $avance, $estado, $b['observaciones'] ?? null, $real[0], $real[1], $b['id']);
         return ['id' => (int)$b['id']];
     }
     if ($req->u['rol'] === 'consulta') falla(403, 'Los usuarios de consulta no crean planes');
-    return ['id' => ejecutar('INSERT INTO planes_accion (empresa_id, objetivo_id, indicador_id, riesgo_id, nombre, responsable_id, fecha_inicio, fecha_fin, avance, estado, observaciones)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)', $req->u['empresa_id'], $b['objetivo_id'] ?? null, $b['indicador_id'] ?? null, $b['riesgo_id'] ?? null,
-        txt($b['nombre']), ($b['responsable_id'] ?? null) ?: $req->u['id'], $b['fecha_inicio'] ?? null, $b['fecha_fin'] ?? null, $avance, $estado, $b['observaciones'] ?? null)];
+    $real = fechas_reales($b, null);
+    return ['id' => ejecutar('INSERT INTO planes_accion (empresa_id, objetivo_id, indicador_id, riesgo_id, nombre, responsable_id, fecha_inicio, fecha_fin, avance, estado, observaciones, fecha_inicio_real, fecha_fin_real)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', $req->u['empresa_id'], $b['objetivo_id'] ?? null, $b['indicador_id'] ?? null, $b['riesgo_id'] ?? null,
+        txt($b['nombre']), ($b['responsable_id'] ?? null) ?: $req->u['id'], $b['fecha_inicio'] ?? null, $b['fecha_fin'] ?? null, $avance, $estado, $b['observaciones'] ?? null, $real[0], $real[1])];
 });
 
 // ---------- Reporte «Seguimiento al MOP»: exportación XLSX / CSV ----------

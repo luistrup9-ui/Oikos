@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS controles (
   mitiga_probabilidad TINYINT DEFAULT 0, mitiga_impacto TINYINT DEFAULT 0,
   efectividad VARCHAR(20) NOT NULL DEFAULT 'Moderado' CHECK (efectividad IN ('Fuerte','Moderado','Débil')),
   frecuencia VARCHAR(100), documentado TINYINT DEFAULT 0, evidencia TEXT, responsable_gestion_id INT, responsable_revision_id INT,
+  clase VARCHAR(20) NOT NULL DEFAULT 'Actual',
   FOREIGN KEY (riesgo_id) REFERENCES riesgos(id) ON DELETE CASCADE,
   FOREIGN KEY (responsable_gestion_id) REFERENCES usuarios(id), FOREIGN KEY (responsable_revision_id) REFERENCES usuarios(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -159,11 +160,20 @@ CREATE TABLE IF NOT EXISTS planes_accion (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT, objetivo_id INT, indicador_id INT, nombre VARCHAR(500) NOT NULL, responsable_id INT,
   fecha_inicio VARCHAR(30), fecha_fin VARCHAR(30), avance DOUBLE DEFAULT 0,
   estado VARCHAR(20) DEFAULT 'Abierto' CHECK (estado IN ('Abierto','En curso','Cerrado')), observaciones TEXT, riesgo_id INT,
+  fecha_inicio_real DATE NULL, fecha_fin_real DATE NULL,
   FOREIGN KEY (objetivo_id) REFERENCES objetivos(id) ON DELETE CASCADE, FOREIGN KEY (indicador_id) REFERENCES indicadores(id) ON DELETE CASCADE,
   FOREIGN KEY (responsable_id) REFERENCES usuarios(id), FOREIGN KEY (riesgo_id) REFERENCES riesgos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Auditorías y mejora ----------
+CREATE TABLE IF NOT EXISTS eval_ciclos (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL DEFAULT 1, nombre VARCHAR(100) NOT NULL, orden INT NOT NULL DEFAULT 0, activo TINYINT NOT NULL DEFAULT 1,
+  UNIQUE KEY eval_ciclos_nombre (empresa_id, nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS hallazgo_clasificaciones (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL DEFAULT 1, nombre VARCHAR(100) NOT NULL,
+  UNIQUE KEY hallazgo_clasificaciones_nombre (empresa_id, nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS evaluaciones (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT, codigo VARCHAR(80), anio INT NOT NULL,
   tipo VARCHAR(40) NOT NULL CHECK (tipo IN ('Auditoría interna','Auditoría externa','Autoevaluación','Inspección')),
@@ -171,7 +181,8 @@ CREATE TABLE IF NOT EXISTS evaluaciones (
   evaluador VARCHAR(40) NOT NULL DEFAULT 'Coordinador de Calidad' CHECK (evaluador IN ('Coordinador de Calidad','Dueños de proceso','Externo')),
   auditor_id INT, auditor_externo VARCHAR(255), fecha_inicio VARCHAR(30), fecha_fin VARCHAR(30),
   estado VARCHAR(20) NOT NULL DEFAULT 'Planeación' CHECK (estado IN ('Planeación','Ejecución','Evaluación','Terminada')),
-  conclusiones TEXT, creado DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (auditor_id) REFERENCES usuarios(id)
+  conclusiones TEXT, creado DATETIME DEFAULT CURRENT_TIMESTAMP, ciclo_id INT NULL, fortalezas TEXT NULL, recomendaciones TEXT NULL,
+  FOREIGN KEY (auditor_id) REFERENCES usuarios(id), CONSTRAINT evaluaciones_ciclo FOREIGN KEY (ciclo_id) REFERENCES eval_ciclos(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS evaluacion_procesos (
   evaluacion_id INT NOT NULL, proceso_id INT NOT NULL, fecha VARCHAR(30), auditado_id INT, PRIMARY KEY (evaluacion_id, proceso_id),
@@ -179,16 +190,16 @@ CREATE TABLE IF NOT EXISTS evaluacion_procesos (
   FOREIGN KEY (auditado_id) REFERENCES usuarios(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS verificacion_items (
-  id INT PRIMARY KEY AUTO_INCREMENT, evaluacion_id INT, proceso_id INT, requisito TEXT, pregunta TEXT NOT NULL,
+  id INT PRIMARY KEY AUTO_INCREMENT, evaluacion_id INT, proceso_id INT, cuestionario VARCHAR(200) NULL, requisito TEXT, pregunta TEXT NOT NULL,
   resultado VARCHAR(20) CHECK (resultado IN ('Conforme','No conforme','Observación','No aplica')), evidencia TEXT,
   FOREIGN KEY (evaluacion_id) REFERENCES evaluaciones(id) ON DELETE CASCADE, FOREIGN KEY (proceso_id) REFERENCES procesos(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS hallazgos (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT, codigo VARCHAR(80), evaluacion_id INT, item_id INT, origen VARCHAR(100) NOT NULL, proceso_id INT,
   tipo VARCHAR(40) NOT NULL CHECK (tipo IN ('No conformidad mayor','No conformidad menor','Observación','Oportunidad de mejora')),
-  requisito TEXT, descripcion TEXT NOT NULL, evidencia TEXT, usuario_id INT, fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+  requisito TEXT, descripcion TEXT NOT NULL, evidencia TEXT, usuario_id INT, fecha DATETIME DEFAULT CURRENT_TIMESTAMP, clasificacion_id INT NULL,
   FOREIGN KEY (evaluacion_id) REFERENCES evaluaciones(id) ON DELETE SET NULL, FOREIGN KEY (item_id) REFERENCES verificacion_items(id) ON DELETE SET NULL,
-  FOREIGN KEY (proceso_id) REFERENCES procesos(id)
+  FOREIGN KEY (proceso_id) REFERENCES procesos(id), CONSTRAINT hallazgos_clasificacion FOREIGN KEY (clasificacion_id) REFERENCES hallazgo_clasificaciones(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS acciones (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT, codigo VARCHAR(80), hallazgo_id INT,
@@ -206,6 +217,28 @@ CREATE TABLE IF NOT EXISTS actividades (
 CREATE TABLE IF NOT EXISTS acciones_bitacora (
   id INT PRIMARY KEY AUTO_INCREMENT, accion_id INT, evento VARCHAR(255), comentario TEXT, usuario_id INT, fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (accion_id) REFERENCES acciones(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Evaluaciones: emisores, tipos, historial de transiciones y parámetros de la empresa
+CREATE TABLE IF NOT EXISTS eval_emisores (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL DEFAULT 1, sigla VARCHAR(10) NOT NULL, nombre VARCHAR(40) NOT NULL,
+  riesgos_defecto TINYINT NOT NULL DEFAULT 0, indicadores_defecto TINYINT NOT NULL DEFAULT 0, tramites_defecto TINYINT NOT NULL DEFAULT 0,
+  UNIQUE KEY eval_emisores_nombre (empresa_id, nombre), UNIQUE KEY eval_emisores_sigla (empresa_id, sigla)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS eval_tipos (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL DEFAULT 1, nombre VARCHAR(40) NOT NULL,
+  por_defecto TINYINT NOT NULL DEFAULT 0, estado_inicial VARCHAR(20) NOT NULL DEFAULT 'Planeación',
+  UNIQUE KEY eval_tipos_nombre (empresa_id, nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS evaluacion_historial (
+  id INT PRIMARY KEY AUTO_INCREMENT, evaluacion_id INT NOT NULL, usuario_id INT NULL, fecha DATETIME NOT NULL,
+  estado_inicial VARCHAR(20) NULL, estado_final VARCHAR(20) NOT NULL, observaciones TEXT NULL, usuarios_ruta VARCHAR(500) NULL,
+  KEY evaluacion_historial_evaluacion (evaluacion_id),
+  FOREIGN KEY (evaluacion_id) REFERENCES evaluaciones(id) ON DELETE CASCADE,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS parametros (
+  empresa_id INT NOT NULL, clave VARCHAR(80) NOT NULL, valor VARCHAR(500) NOT NULL, PRIMARY KEY (empresa_id, clave)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Glosario ----------

@@ -6,7 +6,6 @@ const TIPOS_HALLAZGO = ['No conformidad mayor', 'No conformidad menor', 'Observa
 const etiquetaHallazgo = t => `<span class="chip" style="${t.startsWith('No conformidad') ? 'background:#fde7e5;color:var(--rojo)' : ''}">${esc(t)}</span>`;
 const pasos = (lista, actual) => `<div class="flujo">${lista.map((e, i) => {
   const k = lista.indexOf(actual); return `<div class="paso ${i < k ? 'hecho' : i === k ? 'actual' : ''}">${esc(e)}</div>`; }).join('')}</div>`;
-const RESULTADO_ICONO = { Conforme: '✅', 'No conforme': '❌', 'Observación': '⚠️', 'No aplica': '➖' };
 
 // ---------- Programa de evaluaciones ----------
 rutas.auditorias = async function () {
@@ -50,17 +49,20 @@ async function editarEvaluacion(e) {
   const elegidos = (e.lista_procesos || []).map(p => p.proceso_id);
   const v = await modal(e.id ? `Editar ${e.codigo}` : 'Programar evaluación', `<div class="form">
     <label class="ancho">Nombre<input name="nombre" required value="${esc(e.nombre)}" placeholder="Auditoría interna de calidad 2026"></label>
-    <label>Tipo${sel('tipo', ca.tipos, e.tipo)}</label>
+    <label>Tipo${sel('tipo', ca.tipos, e.tipo || ca.tipo_defecto)}</label>
     <label>Plan (año)<input type="number" name="anio" required value="${e.anio || anioHoy}"></label>
     <label>Evaluador${sel('evaluador', ca.evaluadores, e.evaluador)}</label>
     <label>Auditor interno<select name="auditor_id">${opciones(cat.usuarios.filter(u => u.rol !== 'consulta'), e.auditor_id, '— Ninguno —')}</select></label>
     <label class="ancho">Auditor u organismo externo<input name="auditor_externo" value="${esc(e.auditor_externo)}"></label>
     <label>Fecha inicio<input type="date" name="fecha_inicio" value="${esc(e.fecha_inicio)}"></label>
     <label>Fecha fin<input type="date" name="fecha_fin" value="${esc(e.fecha_fin)}"></label>
+    <label class="ancho">Ciclo<select name="ciclo_id">${opciones(ca.ciclos, e.ciclo_id, '— Sin ciclo —')}</select></label>
     <label class="ancho">Procesos a evaluar<select name="procesos" multiple style="min-height:150px">${cat.procesos.map(p =>
       `<option value="${p.id}" ${elegidos.includes(p.id) ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></label>
     <label class="ancho">Objetivo<textarea name="objetivo">${esc(e.objetivo)}</textarea></label>
     <label class="ancho">Alcance<textarea name="alcance">${esc(e.alcance)}</textarea></label>
+    <label class="ancho">Fortalezas<textarea name="fortalezas">${esc(e.fortalezas)}</textarea></label>
+    <label class="ancho">Recomendaciones<textarea name="recomendaciones">${esc(e.recomendaciones)}</textarea></label>
     <label class="ancho">Criterios / sistema de referencia<input name="criterios" value="${esc(e.criterios ?? 'ISO 9001:2015')}"></label></div>`);
   if (!v) return;
   try {
@@ -71,65 +73,144 @@ async function editarEvaluacion(e) {
 }
 
 // ---------- Ficha de la evaluación ----------
-rutas.auditoria = async function () {
-  const id = location.hash.split('?')[0].split('/')[2];
-  const e = await api('/evaluaciones/' + id);
-  const ca = await catalogosAud();
-  const k = ca.estados.indexOf(e.estado);
+const TABS_EVAL = [['general', 'General'], ['cuestionarios', 'Cuestionarios'], ['estadisticas', 'Estadísticas por nivel'], ['resultados', 'Resultados'],
+  ['plan', 'Plan de mejoramiento'], ['historial', 'Historial']];
+const DEFINICION_NIVEL = {
+  Conforme: 'La evidencia demuestra que se cumple el requisito.',
+  'Observación': 'El requisito se cumple solo en parte o con aspectos por mejorar.',
+  'No conforme': 'No hay evidencia de que se cumpla el requisito.',
+  'No aplica': 'El requisito no aplica a la unidad que se evalúa.',
+};
+const textoLargo = v => v ? esc(v).replace(/\n/g, '<br>') : '—';
+const pctNivel = v => v == null ? '—' : `${Number(v).toLocaleString('es-CO', { maximumFractionDigits: 2 })} %`;
+const chipNivel = (resultado, niveles) => { const n = niveles.find(x => x.resultado === resultado); return n ? `<span class="nivel ${n.color}">${esc(n.nombre)}</span>` : '<span class="sub">Pendiente</span>'; };
+const chipGestion = n => `<span class="nivel ${esc(n.color)}">${esc(n.texto)}</span>`;
+
+// Transiciones que ofrece «Aplicar transición» según el estado y quién lo mira (las condiciones de fondo las valida el servidor)
+function transicionesEval(e, ca) {
+  const k = ca.estados.indexOf(e.estado), t = [];
+  if (!e.es_auditor || e.estado === 'Terminada') return t;
+  if (k < 3 && (k < 2 || e.puede_editar)) t.push({ destino: ca.estados[k + 1], nombre: k === 2 ? 'Terminar' : `Pasar a ${ca.estados[k + 1]}` });
+  if (k > 0) t.push({ destino: ca.estados[k - 1], nombre: `Volver a ${ca.estados[k - 1]}` });
+  return t;
+}
+
+function evalGeneral(e) {
+  const dato = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  const agenda = e.es_auditor && e.estado !== 'Terminada';
+  return `<div class="ficha"><div>
+      <div class="tarjeta"><h3>Información general</h3><dl class="datos">
+        ${dato('Código', `<span class="mono">${esc(e.codigo)}</span>`)}${dato('Estado', `<span class="chip">${esc(e.estado)}</span>`)}
+        ${dato('Plan', e.anio)}${dato('Evaluación', esc(e.nombre))}${dato('Tipo', esc(e.tipo))}${dato('Ciclo', esc(e.ciclo) || '—')}
+        ${dato('Fecha inicio – fin', `${fecha(e.fecha_inicio)} → ${fecha(e.fecha_fin)}`)}
+        ${dato('Evaluador', `${esc(e.evaluador)}${e.emisor ? ` <small class="sub">(${esc(e.emisor.sigla)})</small>` : ''}`)}
+        ${dato('Auditor', esc(e.auditor || e.auditor_externo || '—'))}${dato('Sistema de referencia', esc(e.criterios) || '—')}</dl></div>
+      <div class="tarjeta"><h3>Descripción general</h3><dl class="datos">
+        ${dato('Objetivo', textoLargo(e.objetivo))}${dato('Alcance', textoLargo(e.alcance))}
+        ${dato('Equipo auditado', e.equipo_auditado.length ? e.equipo_auditado.map(c => `<span class="chip">${esc(c)}</span>`).join(' ') : '—')}
+        ${dato('Fortalezas', textoLargo(e.fortalezas))}${dato('Conclusiones', e.conclusiones ? textoLargo(e.conclusiones) : '<span class="sub">Se escriben al terminar la evaluación.</span>')}
+        ${dato('Recomendaciones', textoLargo(e.recomendaciones))}</dl></div></div>
+    <div><div class="tarjeta"><h3>Unidades auditables</h3>
+      ${e.lista_procesos.length ? `<table><tbody>${e.lista_procesos.map(p => `<tr><td><b>${esc(p.nombre)}</b><br><small class="sub">${p.fecha ? fecha(p.fecha) : 'Sin fecha'}${p.auditado ? ' · auditado: ' + esc(p.auditado) : ''}</small></td>
+        <td style="text-align:right">${agenda ? `<button class="btn chico texto" data-agenda="${p.proceso_id}">Agenda</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="vacio">Agrega procesos a la evaluación (botón Editar).</p>'}</div></div></div>`;
+}
+
+function evalCuestionarios(e, inf, ca) {
   const editaLista = e.es_auditor && ['Planeación', 'Ejecución'].includes(e.estado);
   const responde = e.es_auditor && e.estado === 'Ejecución';
   const pendientes = e.items.filter(i => !i.resultado).length;
+  const cuentas = e.resumen.filter(x => x.resultado && x.n).map(x => { const n = ca.niveles.find(v => v.resultado === x.resultado); return `<span class="nivel ${n.color}">${x.n} ${esc(n.nombre.toLowerCase())}</span>`; }).join(' ');
+  const fila = i => `<tr><td class="mono" style="width:56px">${esc(i.requisito)}</td>
+    <td>${esc(i.pregunta)}${i.evidencia ? `<br><small class="sub">Evidencia: ${esc(i.evidencia)}</small>` : ''}</td>
+    <td style="white-space:nowrap">${chipNivel(i.resultado, ca.niveles)}</td>
+    <td style="white-space:nowrap">${responde ? `<button class="btn chico ${i.resultado ? '' : 'primario'}" data-resp="${i.id}">${i.resultado ? 'Cambiar' : 'Responder'}</button>` : ''}
+      ${editaLista && !i.resultado ? `<button class="btn chico texto" data-qi="${i.id}" title="Quitar">✕</button>` : ''}</td></tr>`;
+  return `<div class="tarjeta"><div class="encabezado"><h3 style="margin:0">Cuestionarios por unidad auditable</h3>
+      ${editaLista ? '<div class="acciones"><button class="btn chico" id="iso">Cargar preguntas ISO 9001</button><button class="btn chico primario" id="pregunta">+ Pregunta</button></div>' : ''}</div>
+    <p class="sub">${e.items.length} preguntas · ${pendientes} sin responder${cuentas ? ' · ' + cuentas : ''}</p>
+    ${e.lista_procesos.map(p => {
+      const items = e.items.filter(i => i.proceso_id === p.proceso_id);
+      const grupos = [...new Set(items.map(i => i.cuestionario || ''))];
+      return `<h3 style="margin-top:14px">${esc(p.nombre)}</h3>
+        ${items.length ? grupos.map(g => `<h4 class="cuestionario">${esc(g || 'Lista de verificación')}</h4>
+          <table><tbody>${items.filter(i => (i.cuestionario || '') === g).map(fila).join('')}</tbody></table>`).join('') : '<p class="sub">Sin preguntas para esta unidad.</p>'}`;
+    }).join('') || '<p class="vacio">Agrega procesos (unidades auditables) a la evaluación.</p>'}</div>`;
+}
+
+function evalEstadisticas(e, inf, ca) {
+  return `<div class="tarjeta"><h3>Escala de calificación</h3><div class="tabla-wrap"><table><thead><tr><th class="num">Nivel</th><th>Calificación</th><th>Definición</th></tr></thead><tbody>
+      ${ca.niveles.map((n, i) => `<tr><td class="num">${i + 1}</td><td><span class="nivel ${n.color}">${esc(n.nombre)}</span></td><td>${esc(DEFINICION_NIVEL[n.resultado])}</td></tr>`).join('')}
+      <tr><td class="num">NA</td><td><span class="nivel gris">Sin responder</span></td><td>La pregunta todavía no tiene respuesta.</td></tr></tbody></table></div></div>
+    <div class="tarjeta"><h3>Porcentaje de cada nivel</h3>
+      ${inf.total.total ? `<div class="barras-nivel">${inf.estadisticas.map(x => `<div class="barra-nivel"><span class="nivel ${esc(x.color)}">${esc(x.nombre)}</span>
+        <div class="pista"><i class="${esc(x.color)}" style="width:${Math.max(0, Math.min(100, x.pct))}%"></i></div>
+        <b>${pctNivel(x.pct)}</b><small class="sub">${x.n} de ${inf.total.total}</small></div>`).join('')}</div>` : '<p class="vacio">Todavía no hay preguntas en esta evaluación.</p>'}</div>`;
+}
+
+function evalResultados(e, inf) {
+  const celdas = x => `<td class="num">${x.cumple}</td><td class="num">${x.parcial}</td><td class="num">${x.no_cumple}</td><td class="num">${x.no_aplica}</td><td>${chipGestion(x.nivel)}</td><td class="num">${pctNivel(x.pct)}</td>`;
+  const cab = primera => `<thead><tr>${primera}<th class="num">Cumple</th><th class="num">Cumple parcialmente</th><th class="num">No cumple</th><th class="num">No aplica</th><th>Nivel de gestión</th><th class="num">%</th></tr></thead>`;
+  return `<div class="tarjeta"><div class="encabezado"><h3>Informe de auditoría</h3><button class="btn chico" data-imprimir>Imprimir / PDF</button></div>
+      <p class="sub">Cumplimiento = (Cumple + ½ Cumple parcialmente) ÷ (Cumple + Cumple parcialmente + No cumple); «No aplica» y las preguntas sin responder no cuentan.
+        Semáforo del nivel de gestión: verde desde ${pctNivel(inf.cortes.verde)}, amarillo desde ${pctNivel(inf.cortes.amarillo)}.</p>
+      ${inf.resultados.length ? `<div class="tabla-wrap"><table>${cab('<th>Cuestionario</th><th>Unidad</th>')}<tbody>
+        ${inf.resultados.map(x => `<tr><td>${esc(x.cuestionario)}</td><td>${esc(x.unidad)}</td>${celdas(x)}</tr>`).join('')}</tbody></table></div>`
+        : '<p class="vacio">Todavía no hay preguntas que mostrar.</p>'}</div>
+    <div class="tarjeta"><h3>Reporte por unidad</h3>
+      ${inf.unidades.length ? `<div class="tabla-wrap"><table>${cab('<th>Unidad</th>')}<tbody>
+        ${inf.unidades.map(x => `<tr><td>${esc(x.unidad)}</td>${celdas(x)}</tr>`).join('')}
+        <tr class="total"><td><b>Total</b></td>${celdas(inf.total)}</tr></tbody></table></div>` : '<p class="vacio">Sin unidades con preguntas.</p>'}</div>`;
+}
+
+function evalPlan(e, inf) {
+  return `<div class="tarjeta"><div class="encabezado"><h3>Informe final: hallazgos y puntos de atención</h3>
+      <div class="acciones">${esCalidad() ? `<button class="btn chico" data-ir="#/admin?v=evaluaciones&s=atenciones&evaluacion=${e.id}">Reporte puntos de atención</button>` : ''}
+        <button class="btn chico" data-ir="#/acciones?v=hallazgos">Todos los hallazgos</button></div></div>
+    ${inf.plan.length ? inf.plan.map(h => `<div class="hallazgo-plan"><h4>${h.numero}. ${esc(h.descripcion)}</h4>
+      <p class="sub"><a class="mono" href="#/hallazgo/${h.id}">${esc(h.codigo)}</a> · ${etiquetaHallazgo(h.tipo)}${h.clasificacion ? ` · ${esc(h.clasificacion)}` : ''} · Unidad: ${esc(h.unidad || '—')}</p>
+      ${h.puntos.length ? `<div class="tabla-wrap"><table><thead><tr><th>Punto de atención</th><th>Tipo</th><th>Estado</th><th>Responsable</th><th>Fecha límite</th><th class="num">Avance</th></tr></thead><tbody>
+        ${h.puntos.map(a => `<tr class="click" data-ir="#/accion/${a.id}"><td class="mono">${esc(a.codigo)}</td><td>${esc(a.tipo)}</td><td><span class="chip">${esc(a.estado)}</span></td>
+          <td>${esc(a.responsable || '—')}</td><td>${fecha(a.fecha_compromiso)}${a.vencida ? ' <span class="faltan">vencida</span>' : ''}</td><td class="num">${pctNivel(a.avance)}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="sub">Aún no tiene puntos de atención: se abren desde el hallazgo («Abrir acción»).</p>'}</div>`).join('')
+      : '<p class="vacio">Esta evaluación no tiene hallazgos. Se generan solos al responder «No cumple» o «Cumple parcialmente».</p>'}</div>`;
+}
+
+function evalHistorial(e, inf) {
+  return `<div class="tarjeta"><h3>Historial de transiciones</h3>
+    ${inf.historial.length ? `<div class="tabla-wrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Estado inicial</th><th>Estado final</th><th>Observaciones</th><th>Usuarios ruta</th></tr></thead><tbody>
+      ${inf.historial.map(h => `<tr><td style="white-space:nowrap">${fecha(h.fecha)}</td><td>${esc(h.usuario || '—')}</td><td>${esc(h.estado_inicial || '—')}</td>
+        <td><span class="chip">${esc(h.estado_final)}</span></td><td>${textoLargo(h.observaciones)}</td><td><small>${esc(h.usuarios_ruta || '—')}</small></td></tr>`).join('')}</tbody></table></div>`
+      : '<p class="vacio">Esta evaluación no tiene movimientos registrados (se anotan desde que existe el historial).</p>'}</div>`;
+}
+
+rutas.auditoria = async function () {
+  const id = location.hash.split('?')[0].split('/')[2];
+  const [e, inf, ca] = await Promise.all([api('/evaluaciones/' + id), api(`/evaluaciones/${id}/informe`), catalogosAud()]);
+  const tab = TABS_EVAL.some(([k]) => k === parametro('t')) ? parametro('t') : 'general';
+  const trans = transicionesEval(e, ca);
+  const pestana = { general: evalGeneral, cuestionarios: evalCuestionarios, estadisticas: evalEstadisticas, resultados: evalResultados, plan: evalPlan, historial: evalHistorial }[tab];
   vista.innerHTML = `
     <div class="encabezado"><div><a href="#/auditorias">← Evaluaciones</a>
       <h2 style="margin-top:6px"><span class="mono">${esc(e.codigo)}</span> · ${esc(e.nombre)}</h2></div>
       <div class="acciones">
-        ${e.es_auditor && k > 0 && e.estado !== 'Terminada' ? `<button class="btn" data-ir="${ca.estados[k - 1]}">← Volver a ${ca.estados[k - 1]}</button>` : ''}
-        ${e.es_auditor && k < 3 && (k < 2 || e.puede_editar) ? `<button class="btn primario" data-ir="${ca.estados[k + 1]}">Pasar a ${ca.estados[k + 1]} →</button>` : ''}
+        ${trans.length ? `<select id="transicion" title="Transición disponible">${trans.map(t => `<option value="${esc(t.destino)}">${esc(t.nombre)}</option>`).join('')}</select>
+          <button class="btn primario" id="aplicar">Aplicar transición</button>` : ''}
         ${e.puede_editar && e.estado !== 'Terminada' ? '<button class="btn" id="editar">Editar</button>' : ''}
         ${e.puede_editar && e.estado === 'Planeación' ? '<button class="btn peligro" id="eliminar">Eliminar</button>' : ''}
         <button class="btn" data-imprimir>Informe / PDF</button></div></div>
     ${pasos(ca.estados, e.estado)}
-    <div class="ficha">
-      <div>
-        <div class="tarjeta"><div class="encabezado"><h3 style="margin:0">Lista de verificación</h3>
-          ${editaLista ? '<div class="acciones"><button class="btn chico" id="iso">Cargar preguntas ISO 9001</button><button class="btn chico primario" id="pregunta">+ Pregunta</button></div>' : ''}</div>
-          <p class="sub">${e.items.length} preguntas · ${pendientes} sin responder ·
-            ${e.resumen.filter(x => x.resultado && x.n).map(x => `${RESULTADO_ICONO[x.resultado]} ${x.n} ${x.resultado.toLowerCase()}`).join(' · ')}</p>
-          ${e.lista_procesos.map(p => {
-            const items = e.items.filter(i => i.proceso_id === p.proceso_id);
-            return `<h3 style="margin-top:14px">${esc(p.nombre)} <small class="sub">${p.fecha ? '· ' + fecha(p.fecha) : ''} ${p.auditado ? '· auditado: ' + esc(p.auditado) : ''}</small>
-              ${e.es_auditor && e.estado !== 'Terminada' ? `<button class="btn chico texto" data-agenda="${p.proceso_id}">Agenda</button>` : ''}</h3>
-              ${items.length ? `<table><tbody>${items.map(i => `<tr><td class="mono" style="width:56px">${esc(i.requisito)}</td>
-                <td>${esc(i.pregunta)}${i.evidencia ? `<br><small class="sub">Evidencia: ${esc(i.evidencia)}</small>` : ''}</td>
-                <td style="white-space:nowrap">${i.resultado ? `${RESULTADO_ICONO[i.resultado]} ${esc(i.resultado)}` : '<span class="sub">Pendiente</span>'}</td>
-                <td style="white-space:nowrap">${responde ? `<button class="btn chico ${i.resultado ? '' : 'primario'}" data-resp="${i.id}">${i.resultado ? 'Cambiar' : 'Responder'}</button>` : ''}
-                  ${editaLista && !i.resultado ? `<button class="btn chico texto" data-qi="${i.id}" title="Quitar">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>`
-                : '<p class="sub">Sin preguntas para este proceso.</p>'}`; }).join('') || '<p class="vacio">Agrega procesos a la evaluación.</p>'}
-        </div>
-        <div class="tarjeta"><h3>Hallazgos (${e.hallazgos.length})</h3>
-          ${e.hallazgos.length ? `<table><thead><tr><th>Código</th><th>Tipo</th><th>Proceso</th><th>Requisito</th><th>Descripción</th><th class="num">Acciones</th></tr></thead><tbody>
-            ${e.hallazgos.map(h => `<tr class="click" data-ir="#/hallazgo/${h.id}"><td class="mono">${esc(h.codigo)}</td><td>${etiquetaHallazgo(h.tipo)}</td>
-              <td>${esc(h.proceso)}</td><td class="mono">${esc(h.requisito)}</td><td>${esc(h.descripcion)}</td><td class="num">${h.total_acciones}</td></tr>`).join('')}</tbody></table>`
-            : '<p class="sub">Los hallazgos se generan solos al marcar una pregunta como no conforme u observación.</p>'}</div>
-      </div>
-      <div>
-        <div class="tarjeta"><h3>Plan de la evaluación</h3><dl class="datos">
-          <dt>Tipo</dt><dd>${esc(e.tipo)}</dd><dt>Plan</dt><dd>${e.anio}</dd><dt>Evaluador</dt><dd>${esc(e.evaluador)}</dd>
-          <dt>Auditor</dt><dd>${esc(e.auditor || e.auditor_externo || '—')}</dd><dt>Fechas</dt><dd>${fecha(e.fecha_inicio)} → ${fecha(e.fecha_fin)}</dd>
-          <dt>Criterios</dt><dd>${esc(e.criterios) || '—'}</dd><dt>Objetivo</dt><dd>${esc(e.objetivo) || '—'}</dd>
-          <dt>Alcance</dt><dd>${esc(e.alcance) || '—'}</dd></dl></div>
-        <div class="tarjeta"><h3>Conclusiones</h3><p>${esc(e.conclusiones) || '<span class="sub">Se escriben al terminar la evaluación.</span>'}</p></div>
-      </div>
-    </div>`;
+    ${pestanasPagina(TABS_EVAL, tab, '#/auditoria/' + e.id)}
+    <div id="pestana">${pestana(e, inf, ca)}</div>`;
 
-  vista.querySelectorAll('[data-ir]').forEach(b => b.onclick = intentar(async () => {
-    const destino = b.dataset.ir;
-    let body = { estado: destino };
-    if (destino === 'Terminada') {
-      const v = await modal('Terminar evaluación', `<label>Conclusiones del informe<textarea name="conclusiones" required style="min-height:140px">${esc(e.conclusiones)}</textarea></label>`, { aceptar: 'Terminar' });
-      if (!v) return; body.conclusiones = v.conclusiones;
-    }
-    await api(`/evaluaciones/${e.id}/estado`, { method: 'POST', body }); aviso('Estado: ' + destino); rutas.auditoria();
+  $('#aplicar')?.addEventListener('click', intentar(async () => {
+    const destino = $('#transicion').value, termina = destino === 'Terminada';
+    const v = await modal(termina ? 'Terminar evaluación' : `Aplicar transición: ${e.estado} → ${destino}`, `<div class="form">
+      ${termina ? `<label class="ancho">Conclusiones del informe<textarea name="conclusiones" required style="min-height:120px">${esc(e.conclusiones)}</textarea></label>` : ''}
+      <label class="ancho">Observaciones<textarea name="observaciones" placeholder="Opcional: queda en el historial"></textarea></label></div>`, { aceptar: 'Aplicar' });
+    if (!v) return;
+    await api(`/evaluaciones/${e.id}/estado`, { method: 'POST', body: { estado: destino, ...v } });
+    aviso('Estado: ' + destino); rutas.auditoria();
   }));
   $('#editar')?.addEventListener('click', () => editarEvaluacion(e));
   $('#eliminar')?.addEventListener('click', intentar(async () => {
@@ -141,7 +222,8 @@ rutas.auditoria = async function () {
   }));
   $('#pregunta')?.addEventListener('click', intentar(async () => {
     const v = await modal('Nueva pregunta', `<div class="form">
-      <label>Proceso<select name="proceso_id">${opciones(e.lista_procesos.map(p => ({ id: p.proceso_id, nombre: p.nombre })))}</select></label>
+      <label>Unidad (proceso)<select name="proceso_id">${opciones(e.lista_procesos.map(p => ({ id: p.proceso_id, nombre: p.nombre })))}</select></label>
+      <label>Cuestionario<input name="cuestionario" placeholder="Elementos de protección personal"></label>
       <label>Requisito / numeral<input name="requisito" placeholder="8.5.1"></label>
       <label class="ancho">Pregunta<textarea name="pregunta" required></textarea></label></div>`, { aceptar: 'Agregar' });
     if (!v) return;
@@ -161,10 +243,10 @@ rutas.auditoria = async function () {
   vista.querySelectorAll('[data-resp]').forEach(b => b.onclick = intentar(async () => {
     const i = e.items.find(x => x.id == b.dataset.resp);
     const v = await modal(`${i.requisito || ''} ${i.pregunta}`, `<div class="form">
-      <label>Resultado<select name="resultado">${['Conforme', 'No conforme', 'Observación', 'No aplica'].map(r => `<option ${r === i.resultado ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
-      <label>Si es no conforme<select name="tipo_hallazgo"><option>No conformidad menor</option><option>No conformidad mayor</option></select></label>
+      <label>Resultado<select name="resultado">${ca.niveles.map(n => `<option value="${esc(n.resultado)}" ${n.resultado === i.resultado ? 'selected' : ''}>${esc(n.nombre)}</option>`).join('')}</select></label>
+      <label>Si no cumple, el hallazgo es<select name="tipo_hallazgo"><option>No conformidad menor</option><option>No conformidad mayor</option></select></label>
       <label class="ancho">Evidencia observada<textarea name="evidencia">${esc(i.evidencia)}</textarea></label></div>
-      <p class="sub" style="margin:0">Un “no conforme” o una “observación” genera el hallazgo automáticamente.</p>`, { aceptar: 'Guardar' });
+      <p class="sub" style="margin:0">«No cumple» o «Cumple parcialmente» genera el hallazgo automáticamente.</p>`, { aceptar: 'Guardar' });
     if (!v) return;
     const res = await api(`/evaluaciones/${e.id}/items/${i.id}`, { method: 'PUT', body: v });
     aviso(res.hallazgo_id ? 'Guardado · hallazgo registrado' : 'Guardado'); rutas.auditoria();
@@ -262,6 +344,7 @@ async function nuevoHallazgo() {
     <label>Tipo<select name="tipo">${TIPOS_HALLAZGO.map(t => `<option>${t}</option>`).join('')}</select></label>
     <label>Proceso<select name="proceso_id" required>${opciones(procesos, yo.proceso_id)}</select></label>
     <label>Requisito<input name="requisito" placeholder="Opcional"></label>
+    <label>Clasificación<select name="clasificacion_id">${opciones(ca.clasificaciones, '', '— Hallazgo —')}</select></label>
     <label class="ancho">Descripción<textarea name="descripcion" required></textarea></label>
     <label class="ancho">Evidencia<textarea name="evidencia"></textarea></label></div>`, { aceptar: 'Registrar' });
   if (!v) return;
@@ -282,7 +365,7 @@ rutas.hallazgo = async function () {
       ${puedeAbrir ? '<button class="btn primario" id="abrir">Abrir acción</button>' : ''}</div>
     <div class="tarjeta"><dl class="datos">
       <dt>Origen</dt><dd>${esc(h.origen)} ${h.evaluacion_id ? `<a class="mono" href="#/auditoria/${h.evaluacion_id}">${esc(h.evaluacion_codigo)}</a>` : ''}</dd>
-      <dt>Proceso</dt><dd>${esc(h.proceso)}</dd><dt>Requisito</dt><dd>${esc(h.requisito) || '—'}</dd>
+      <dt>Proceso</dt><dd>${esc(h.proceso)}</dd><dt>Clasificación</dt><dd>${esc(h.clasificacion) || '—'}</dd><dt>Requisito</dt><dd>${esc(h.requisito) || '—'}</dd>
       <dt>Descripción</dt><dd>${esc(h.descripcion)}</dd><dt>Evidencia</dt><dd>${esc(h.evidencia) || '—'}</dd>
       <dt>Registrado</dt><dd>${esc(h.registrado_por)} · ${fecha(h.fecha)}</dd></dl></div>
     <div class="tarjeta"><h3>Acciones</h3>${acciones.length ? `<table><tbody>${acciones.map(a => `<tr class="click" data-ir="#/accion/${a.id}">

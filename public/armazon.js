@@ -91,6 +91,7 @@ function cargarAdmin() {
   $('#arbolAdmin').innerHTML = nodo('Administración', '#/admin', [
     nodo('Mecanismos de integración', '#/mecanismos'),
     ...(esAdmin ? [nodo('Usuarios', '#/admin?v=usuarios')] : []),
+    nodo('Evaluaciones', '#/admin?v=evaluaciones'),
     nodo('Importar datos', '#/admin?v=importar'),
     ...(esAdmin ? [nodo('Respaldos', '#/admin?v=respaldos')] : []),
   ]);
@@ -242,7 +243,8 @@ rutas.bienvenida = async function () {
 // ---------- Tablas como los listados de Almera: 15 registros por página y columnas ordenables ----------
 const TAMANOS = [15, 30, 50, 100];
 function mejorarTabla(tabla) {
-  if (tabla.dataset.dt || tabla.closest('dialog') || tabla.classList.contains('arbol') || !tabla.tBodies[0]) return;
+  // sin-dt: tablas pequeñas y fijas (p. ej. el resumen por zona de la matriz de riesgos) que no se ordenan ni se paginan
+  if (tabla.dataset.dt || tabla.closest('dialog') || tabla.classList.contains('arbol') || tabla.classList.contains('sin-dt') || !tabla.tBodies[0]) return;
   tabla.dataset.dt = '1';
   const cuerpo = tabla.tBodies[0];
   let filas = [...cuerpo.rows], pagina = 0, tamano = Number(guardado.leer('tamano')) || 15, orden = null;

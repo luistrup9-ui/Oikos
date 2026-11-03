@@ -8,9 +8,14 @@ const catalogosRiesgo = async () => catR || (catR = await api('/riesgos/catalogo
 const puedeCrearRiesgo = () => esCalidad() || yo.rol === 'lider_proceso';
 
 // ---------- Matriz de riesgos ----------
+// Cinco pestañas como en Almera, llenas con una misma consulta: la matriz absoluta y la residual (mapa de calor, resumen por zona con torta y lista
+// de escenarios), la exposición, la distribución de escenarios y el plan de acción. Estas tres últimas viven en riesgos-vistas.js.
+// El filtro de zona mira la matriz de la pestaña abierta (la residual en «Riesgo residual» y en la exposición residual; la absoluta en las demás).
+const PESTANAS_RIESGOS = [['absoluto', 'Riesgo absoluto'], ['residual', 'Riesgo residual'], ['exposicion', 'Exposición'], ['distribucion', 'Distribución de escenarios'], ['plan', 'Plan de acción']];
 rutas.riesgos = async function () {
   const cr = await catalogosRiesgo();
-  const estado = { matriz: 'absoluto', agrupar: 'proceso', apilar: false, celda: null };
+  const pedida = parametro('t');
+  const estado = { pestana: PESTANAS_RIESGOS.some(p => p[0] === pedida) ? pedida : 'absoluto', celda: null, version: 0, exposicion: { matriz: 'absoluto', atributo: 'proceso', apilar: false } };
   vista.innerHTML = `
     <div class="encabezado"><h2>Matriz de riesgos</h2>
       <div class="acciones"><button class="btn" id="exportar">Exportar CSV</button>
@@ -20,79 +25,89 @@ rutas.riesgos = async function () {
       <label>Proceso<select name="proceso" multiple>${opciones(cat.procesos)}</select></label>
       <label>Tipo de riesgo<select name="tipo" multiple>${cr.tipos.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
       <label>Zona<select name="zona" multiple>${ZONAS.map(z => `<option>${z}</option>`).join('')}</select></label>
-      <div class="acciones"><button class="btn primario">Filtrar</button></div></form>
-    <div class="kpis" id="kpis"></div>
-    <div class="ficha">
-      <div class="tarjeta"><div class="encabezado"><h3 style="margin:0">Mapa de calor</h3>
-        <div class="tabs" style="margin:0;border:none"><button type="button" data-m="absoluto" class="activo">Riesgo absoluto</button>
-          <button type="button" data-m="residual">Riesgo residual</button></div></div><div id="calor"></div></div>
-      <div class="tarjeta dist"><div class="encabezado"><h3 style="margin:0">Distribución</h3>
-        <div class="acciones"><select id="agrupar"><option value="proceso">Por proceso</option><option value="tipo">Por tipo de riesgo</option></select>
-          <label style="flex-direction:row;align-items:center"><input type="checkbox" id="apilar"> Apilar 100 %</label></div></div>
-        <div id="distribucion"></div></div>
-    </div>
-    <div class="tarjeta"><div class="encabezado"><h3 style="margin:0" id="tituloLista">Riesgos</h3>
-      <button class="btn chico" id="quitarCelda" hidden>Ver todos</button></div><div id="lista"></div></div>`;
+      <div class="acciones con-campo">
+        <label class="en-linea agrupacion">Agrupación<input type="number" name="agrupacion" min="1" max="999" value="10" title="Si una casilla del mapa de calor tiene más riesgos que este número, muestra solo la cantidad y no los códigos"></label>
+        <button class="btn primario">Generar matrices</button></div></form>
+    <div class="tabs">${PESTANAS_RIESGOS.map(([k, n]) => `<button type="button" data-pestana="${k}">${n}</button>`).join('')}</div>
+    <div id="cuerpo"></div>`;
 
   let riesgos = [];
-  const campo = x => estado.matriz === 'residual'
+  const matrizActiva = () => estado.pestana === 'residual' ? 'residual' : estado.pestana === 'exposicion' ? estado.exposicion.matriz : 'absoluto';
+  const filtros = () => { const { agrupacion, ...f } = valoresForm($('#filtros')); return f; };      // «Agrupación» solo cambia lo que se dibuja, no la consulta
+  const limiteAgrupacion = () => Math.max(1, Math.floor(Number(valoresForm($('#filtros')).agrupacion)) || 10);
+  const conZona = () => !!valoresForm($('#filtros')).zona;
+  const campo = x => matrizActiva() === 'residual'
     ? { p: x.probabilidad_residual, i: x.impacto_residual, z: x.zona_residual } : { p: x.probabilidad, i: x.impacto, z: x.zona };
 
-  function pintar() {
+  // Pestañas «Riesgo absoluto» y «Riesgo residual»: mapa de calor, resumen por zona con torta y lista de escenarios
+  function pintarMatriz() {
+    const matriz = matrizActiva(), limite = limiteAgrupacion();
     const visibles = estado.celda ? riesgos.filter(x => { const c = campo(x); return c.p === estado.celda[0] && c.i === estado.celda[1]; }) : riesgos;
-    $('#kpis').innerHTML = `<div class="kpi"><b>${riesgos.length}</b><span>Riesgos activos</span></div>` +
-      ZONAS.slice().reverse().map(z => `<div class="kpi"><b>${riesgos.filter(x => campo(x).z === z).length}</b><span>${zonaTag(z)} ${estado.matriz}</span></div>`).join('');
+    $('#cuerpo').innerHTML = `
+      <div class="matriz-vista">
+        <div class="tarjeta"><div class="encabezado"><h3>Mapa de calor · ${NOMBRE_MATRIZ[matriz]}</h3></div><div id="calor"></div></div>
+        <div class="tarjeta"><div class="encabezado"><h3>Resumen por zona</h3><span class="cuenta-ctl">${riesgos.length} riesgos</span></div>${resumenZonas(riesgos, matriz)}</div>
+      </div>
+      <div class="tarjeta"><div class="encabezado"><h3 id="tituloLista"></h3><button class="btn chico" id="quitarCelda" hidden>Ver todos</button></div><div id="lista"></div></div>`;
 
-    // Mapa de calor: filas = probabilidad (5 arriba), columnas = impacto
+    // Mapa de calor: filas = probabilidad (5 arriba), columnas = impacto. Una casilla con más riesgos que la agrupación muestra solo la cantidad.
     let html = '';
     for (let p = 5; p >= 1; p--) {
       html += `<div class="eje">${p} · ${esc(cr.probabilidad[p - 1])}</div>`;
       for (let i = 1; i <= 5; i++) {
         const aqui = riesgos.filter(x => { const c = campo(x); return c.p === p && c.i === i; });
-        const sel = estado.celda && estado.celda[0] === p && estado.celda[1] === i;
+        const sel = estado.celda && estado.celda[0] === p && estado.celda[1] === i, agrupada = aqui.length > limite;
         html += `<div class="celda ${zonaDe(p, i)} ${aqui.length ? '' : 'vacia'} ${sel ? 'sel' : ''}" data-c="${p},${i}"
-          title="Probabilidad ${p} × Impacto ${i} = ${p * i}">${aqui.length ? `<b>${aqui.length}</b><small>${aqui.map(x => esc(x.codigo)).join(', ')}</small>` : ''}</div>`;
+          title="Probabilidad ${p} × Impacto ${i} = ${p * i}${agrupada ? ` · ${aqui.length} riesgos (más de ${limite}: solo se muestra la cantidad)` : ''}">${aqui.length
+            ? `<b>${aqui.length}</b>${agrupada ? '' : `<small>${aqui.map(x => esc(x.codigo)).join(', ')}</small>`}` : ''}</div>`;
       }
     }
     html += '<div></div>' + cr.impacto.map((n, k) => `<div class="eje">${k + 1} · ${esc(n)}</div>`).join('');
     $('#calor').innerHTML = `<div class="calor">${html}</div><p class="sub" style="margin:8px 0 0">Filas: probabilidad · columnas: impacto. Haz clic en una casilla para filtrar.</p>`;
     $('#calor').querySelectorAll('[data-c]').forEach(c => c.onclick = () => {
       const [p, i] = c.dataset.c.split(',').map(Number);
-      estado.celda = estado.celda && estado.celda[0] === p && estado.celda[1] === i ? null : [p, i]; pintar();
+      estado.celda = estado.celda && estado.celda[0] === p && estado.celda[1] === i ? null : [p, i]; pintarMatriz();
     });
-
-    // Distribución por proceso o tipo, barras apiladas por zona
-    const grupos = {};
-    riesgos.forEach(x => { const g = estado.agrupar === 'tipo' ? x.tipo : x.proceso; (grupos[g] = grupos[g] || []).push(x); });
-    const max = Math.max(1, ...Object.values(grupos).map(g => g.length));
-    $('#distribucion').innerHTML = Object.entries(grupos).map(([g, xs]) => {
-      const base = estado.apilar ? xs.length : max;
-      return `<div class="fila"><span>${esc(g)}</span><div class="apilada">${ZONAS.map(z => {
-        const n = xs.filter(x => campo(x).z === z).length;
-        return n ? `<i style="width:${n / base * 100}%;background:${COLOR_ZONA[z]}" title="${z}: ${n}"></i>` : '';
-      }).join('')}</div><b>${xs.length}</b></div>`;
-    }).join('') || '<p class="vacio">Sin datos.</p>';
 
     $('#tituloLista').textContent = estado.celda ? `Riesgos en probabilidad ${estado.celda[0]} × impacto ${estado.celda[1]}` : `Riesgos (${visibles.length})`;
     $('#quitarCelda').hidden = !estado.celda;
-    $('#lista').innerHTML = visibles.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Riesgo</th><th>Proceso</th><th>Tipo</th>
-      <th class="num">P×I</th><th>Absoluto</th><th class="num">Controles</th><th class="num">P×I</th><th>Residual</th><th>Tratamiento</th><th>Responsable</th></tr></thead><tbody>
-      ${visibles.map(x => `<tr class="click" data-ir="#/riesgo/${x.id}"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td>
-        <td>${esc(x.proceso)}</td><td>${esc(x.tipo)}</td><td class="num">${x.probabilidad}×${x.impacto}</td><td>${zonaTag(x.zona)}</td>
-        <td class="num">${x.total_controles}</td><td class="num">${x.probabilidad_residual}×${x.impacto_residual}</td><td>${zonaTag(x.zona_residual)}</td>
-        <td>${esc(x.tratamiento)}</td><td>${esc(x.responsable)}</td></tr>`).join('')}</tbody></table></div>`
+    $('#quitarCelda').onclick = () => { estado.celda = null; pintarMatriz(); };
+    $('#lista').innerHTML = visibles.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Riesgo</th><th>Proceso</th><th>Tipo de riesgo</th>
+      <th>Probabilidad</th><th>Impacto</th><th>Zona de riesgo</th><th>Tratamiento</th><th class="num">Controles</th><th>Responsable</th></tr></thead><tbody>
+      ${visibles.map(x => { const c = campo(x); return `<tr class="click" data-ir="#/riesgo/${x.id}"><td class="mono">${esc(x.codigo)}</td><td>${esc(x.nombre)}</td>
+        <td>${esc(x.proceso)}</td><td>${esc(x.tipo)}</td><td class="nw">${c.p} · ${esc(cr.probabilidad[c.p - 1])}</td><td class="nw">${c.i} · ${esc(cr.impacto[c.i - 1])}</td><td>${zonaTag(c.z)}</td>
+        <td>${esc(x.tratamiento)}</td><td class="num">${x.total_controles}</td><td>${esc(x.responsable)}</td></tr>`; }).join('')}</tbody></table></div>`
       : '<p class="vacio">No hay riesgos con estos criterios.</p>';
   }
 
-  const cargar = intentar(async () => { riesgos = await api('/riesgos?' + qs({ ...valoresForm($('#filtros')), matriz: estado.matriz })); estado.celda = null; pintar(); });
-  $('#filtros').addEventListener('submit', e => { e.preventDefault(); cargar(); });
-  vista.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
-    estado.matriz = b.dataset.m; vista.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('activo', x === b));
-    if (valoresForm($('#filtros')).zona) cargar(); else pintar();
+  // Dibuja la pestaña abierta con los riesgos ya cargados (el plan de acción pide los suyos). version evita que una respuesta tardía pise otra pestaña.
+  const pintar = intentar(async () => {
+    const mio = ++estado.version;
+    vista.querySelectorAll('[data-pestana]').forEach(b => b.classList.toggle('activo', b.dataset.pestana === estado.pestana));
+    if (estado.pestana === 'exposicion') vistaExposicion($('#cuerpo'), riesgos, estado.exposicion, cr.tipos, cambio => {
+      const antes = matrizActiva(); Object.assign(estado.exposicion, cambio);
+      if (matrizActiva() !== antes && conZona()) cargar(); else pintar();                          // con filtro de zona, otra matriz es otra consulta
+    });
+    else if (estado.pestana === 'distribucion') $('#cuerpo').innerHTML = vistaDistribucion(riesgos);
+    else if (estado.pestana === 'plan') await vistaPlanes($('#cuerpo'), { ...filtros(), matriz: 'absoluto' }, () => mio === estado.version);
+    else pintarMatriz();
   });
-  $('#agrupar').onchange = e => { estado.agrupar = e.target.value; pintar(); };
-  $('#apilar').onchange = e => { estado.apilar = e.target.checked; pintar(); };
-  $('#quitarCelda').onclick = () => { estado.celda = null; pintar(); };
+  let pedido = 0;
+  const cargar = intentar(async () => {
+    const mio = ++pedido, datos = await api('/riesgos?' + qs({ ...filtros(), matriz: matrizActiva() }));
+    if (mio !== pedido) return;                                                                      // llegó tarde: ya se pidió otra consulta
+    riesgos = datos; estado.celda = null;
+    await pintar();
+  });
+
+  $('#filtros').addEventListener('submit', e => { e.preventDefault(); cargar(); });
+  $('#filtros [name="agrupacion"]').addEventListener('input', () => { if (['absoluto', 'residual'].includes(estado.pestana)) pintarMatriz(); });
+  vista.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => {
+    const antes = matrizActiva();
+    estado.pestana = b.dataset.pestana; estado.celda = null;
+    history.replaceState(null, '', estado.pestana === 'absoluto' ? '#/riesgos' : '#/riesgos?t=' + estado.pestana);   // la dirección sigue a la pestaña sin volver a dibujar todo
+    if (matrizActiva() !== antes && conZona()) cargar(); else pintar();
+  }));
   $('#nuevo')?.addEventListener('click', () => editarRiesgo({}));
   $('#exportar').onclick = () => exportarCSV('matriz-riesgos.csv', riesgos,
     [['codigo', 'Código'], ['proceso', 'Proceso'], ['tipo', 'Tipo'], ['nombre', 'Riesgo'], ['causas', 'Causas'], ['consecuencias', 'Consecuencias'],
@@ -150,11 +165,11 @@ rutas.riesgo = async function () {
       <div>
         <div class="tarjeta"><div class="encabezado"><h3 style="margin:0">Controles</h3>
           ${x.puede_editar ? '<button class="btn chico primario" id="nuevoControl">+ Control</button>' : ''}</div>
-          ${x.controles.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Control</th><th>Clase</th><th>Mitiga</th>
+          ${x.controles.length ? `<div class="tabla-wrap"><table><thead><tr><th>Código</th><th>Control</th><th>Clasificación</th><th>Mitiga</th>
             <th>Efectividad</th><th>Responsables</th><th>Ejecutado ${mes}</th><th></th></tr></thead><tbody>
             ${x.controles.map((c, k) => `<tr><td class="mono">${esc(c.codigo)}</td><td>${esc(c.descripcion)}
                 <br><small class="sub">${esc(c.frecuencia || '')}${c.documentado ? ' · documentado' : ''}${c.evidencia ? ' · evidencia: ' + esc(c.evidencia) : ''}</small></td>
-              <td>${esc(c.clasificacion)}</td><td>${[c.mitiga_probabilidad ? 'Probabilidad' : '', c.mitiga_impacto ? 'Impacto' : ''].filter(Boolean).join(' y ')}</td>
+              <td>${esc(c.clasificacion)}<br><small class="sub">Clase: ${esc(c.clase)}</small></td><td>${[c.mitiga_probabilidad ? 'Probabilidad' : '', c.mitiga_impacto ? 'Impacto' : ''].filter(Boolean).join(' y ')}</td>
               <td>${esc(c.efectividad)}</td><td><small>Gestión: ${esc(c.responsable_gestion || '—')}<br>Revisión: ${esc(c.responsable_revision || '—')}</small></td>
               <td>${c.ejecutado_mes == null ? '<span class="sub">Sin reporte</span>' : c.ejecutado_mes ? '✅ Sí' : '❌ No'}</td>
               <td><div class="acciones">${puedeMonitorear(c) ? `<button class="btn chico" data-mon="${k}">Reportar</button>` : ''}
@@ -213,13 +228,14 @@ async function editarControl(c) {
   const v = await modal(c.id ? `Editar control ${c.codigo}` : 'Nuevo control', `<div class="form">
     <label class="ancho">Control<textarea name="descripcion" required placeholder="Quién hace qué, cada cuánto y cómo queda la evidencia">${esc(c.descripcion)}</textarea></label>
     <label>Clasificación<select name="clasificacion">${['Preventivo', 'Detectivo', 'Correctivo'].map(t => `<option ${t === c.clasificacion ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+    <label>Clase<select name="clase">${['Actual', 'Propuesto'].map(t => `<option ${t === (c.clase || 'Actual') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
     <label>Efectividad<select name="efectividad">${['Fuerte', 'Moderado', 'Débil'].map(t => `<option ${t === (c.efectividad || 'Moderado') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+    <label>Frecuencia<input name="frecuencia" value="${esc(c.frecuencia)}" placeholder="Diaria, por lote, mensual…"></label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="mitiga_probabilidad" value="1" ${c.id ? (c.mitiga_probabilidad ? 'checked' : '') : 'checked'}> Mitiga la probabilidad</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="mitiga_impacto" value="1" ${c.mitiga_impacto ? 'checked' : ''}> Mitiga el impacto</label>
-    <label>Frecuencia<input name="frecuencia" value="${esc(c.frecuencia)}" placeholder="Diaria, por lote, mensual…"></label>
-    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="documentado" value="1" ${c.documentado ? 'checked' : ''}> Está documentado</label>
     <label>Responsable de gestión<select name="responsable_gestion_id">${opciones(usuarios, c.responsable_gestion_id ?? yo.id)}</select></label>
     <label>Responsable de revisión<select name="responsable_revision_id">${opciones(usuarios, c.responsable_revision_id, '—')}</select></label>
+    <label class="ancho" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="documentado" value="1" ${c.documentado ? 'checked' : ''}> Está documentado</label>
     <label class="ancho">Evidencia<input name="evidencia" value="${esc(c.evidencia)}" placeholder="Formato, registro o sistema donde queda"></label></div>`);
   if (!v) return;
   try {
@@ -228,8 +244,10 @@ async function editarControl(c) {
   } catch (e) { aviso(e.message, true); }
 }
 
-// ---------- Listado de controles ----------
+// ---------- Controles: listado y estadísticas (controles-estadisticas.js) ----------
+// Los filtros de arriba valen para las dos pestañas; al cambiar de pestaña no se recarga la pantalla, así se conservan
 rutas.controles = async function () {
+  let pestana = parametro('t') === 'estadisticas' ? 'estadisticas' : 'lista', lista = [];
   vista.innerHTML = `
     <div class="encabezado"><h2>Controles</h2><button class="btn" id="exportar">Exportar CSV</button></div>
     <form class="tarjeta filtros" id="filtros">
@@ -239,26 +257,35 @@ rutas.controles = async function () {
       <label>Responsable<select name="responsable">${opciones(cat.usuarios, '', 'Todos')}</select></label>
       <label>Como<select name="rol"><option value="gestion">Responsable de gestión</option><option value="revision">Responsable de revisión</option></select></label>
       <div class="acciones"><button class="btn primario">Filtrar</button></div></form>
+    <div class="tabs"><button type="button" data-pestana="lista">Controles</button><button type="button" data-pestana="estadisticas">Estadísticas</button></div>
     <div id="resultado"></div>`;
-  let lista = [];
   const cargar = intentar(async () => {
-    lista = await api('/controles?' + qs(valoresForm($('#filtros'))));
-    const clases = ['Preventivo', 'Detectivo', 'Correctivo'];
+    vista.querySelectorAll('[data-pestana]').forEach(b => b.classList.toggle('activo', b.dataset.pestana === pestana));
+    $('#exportar').hidden = pestana !== 'lista';
+    const filtros = valoresForm($('#filtros'));
+    if (pestana === 'estadisticas') return estadisticasControles(filtros);
+    lista = await api('/controles?' + qs(filtros));
+    const clasificaciones = ['Preventivo', 'Detectivo', 'Correctivo'];
     $('#resultado').innerHTML = `<div class="kpis"><div class="kpi"><b>${lista.length}</b><span>Controles</span></div>
-      ${clases.map(c => `<div class="kpi"><b>${lista.filter(x => x.clasificacion === c).length}</b><span>${c}s</span></div>`).join('')}
+      ${clasificaciones.map(c => `<div class="kpi"><b>${lista.filter(x => x.clasificacion === c).length}</b><span>${c}s</span></div>`).join('')}
       <div class="kpi"><b>${lista.filter(x => x.efectividad === 'Fuerte').length}</b><span>Fuertes</span></div></div>
       ${lista.length ? `<div class="tabla-wrap"><table><thead><tr><th>Proceso</th><th>Cód. riesgo</th><th>Riesgo</th><th>Cód. control</th><th>Control</th>
-      <th>Clasificación</th><th>Mitiga P</th><th>Mitiga I</th><th>Efectividad</th><th>Resp. gestión</th><th>Resp. revisión</th></tr></thead><tbody>
+      <th>Clasificación</th><th>Clase</th><th>Mitiga P</th><th>Mitiga I</th><th>Efectividad</th><th>Resp. gestión</th><th>Resp. revisión</th></tr></thead><tbody>
       ${lista.map(c => `<tr class="click" data-ir="#/riesgo/${c.riesgo_id}"><td>${esc(c.proceso)}</td><td class="mono">${esc(c.riesgo_codigo)}</td>
-        <td>${esc(c.riesgo)}</td><td class="mono">${esc(c.codigo)}</td><td>${esc(c.descripcion)}</td><td>${esc(c.clasificacion)}</td>
+        <td>${esc(c.riesgo)}</td><td class="mono">${esc(c.codigo)}</td><td>${esc(c.descripcion)}</td><td>${esc(c.clasificacion)}</td><td>${esc(c.clase)}</td>
         <td>${c.mitiga_probabilidad ? 'Sí' : 'No'}</td><td>${c.mitiga_impacto ? 'Sí' : 'No'}</td><td>${esc(c.efectividad)}</td>
         <td>${esc(c.responsable_gestion)}</td><td>${esc(c.responsable_revision)}</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="vacio">No hay controles con estos criterios.</p>'}`;
   });
   $('#filtros').addEventListener('submit', e => { e.preventDefault(); cargar(); });
+  vista.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => {
+    pestana = b.dataset.pestana;
+    history.replaceState(null, '', pestana === 'lista' ? '#/controles' : '#/controles?t=' + pestana); // la dirección sigue a la pestaña sin volver a dibujar la pantalla
+    cargar();
+  }));
   $('#exportar').onclick = () => exportarCSV('controles.csv', lista,
     [['proceso', 'Proceso'], ['riesgo_codigo', 'Cód. riesgo'], ['riesgo', 'Riesgo'], ['codigo', 'Cód. control'], ['descripcion', 'Control'],
-     ['clasificacion', 'Clasificación'], ['mitiga_probabilidad', 'Mitiga probabilidad'], ['mitiga_impacto', 'Mitiga impacto'],
+     ['clasificacion', 'Clasificación'], ['clase', 'Clase'], ['mitiga_probabilidad', 'Mitiga probabilidad'], ['mitiga_impacto', 'Mitiga impacto'],
      ['efectividad', 'Efectividad'], ['responsable_gestion', 'Responsable gestión'], ['responsable_revision', 'Responsable revisión']]);
   cargar();
 };

@@ -202,10 +202,11 @@ function importadores(): array {
         ],
         'controles' => [
             'titulo' => 'Controles de riesgos',
-            'columnas' => ['riesgo_codigo', 'descripcion', 'clasificacion', 'efectividad', 'mitiga_probabilidad', 'mitiga_impacto', 'frecuencia', 'documentado', 'responsable_gestion', 'responsable_revision'],
+            'columnas' => ['riesgo_codigo', 'descripcion', 'clasificacion', 'efectividad', 'mitiga_probabilidad', 'mitiga_impacto', 'frecuencia', 'documentado', 'responsable_gestion', 'responsable_revision', 'clase'],
             'requeridas' => ['riesgo_codigo', 'descripcion', 'clasificacion'],
-            'ejemplo' => ['R-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 'Fuerte', 'si', 'no', 'Por lote', 'si', 'jperez@metalcof.co', 'mramirez@metalcof.co'],
-            'ayuda' => 'El riesgo debe existir (importa primero la matriz). clasificacion: Preventivo, Detectivo o Correctivo. efectividad: Fuerte, Moderado o Débil. mitiga_*: si/no (al menos uno).',
+            'ejemplo' => ['R-PRO-01', 'Inspección de soldadura en cada lote', 'Detectivo', 'Fuerte', 'si', 'no', 'Por lote', 'si', 'jperez@metalcof.co', 'mramirez@metalcof.co', 'Actual'],
+            'ayuda' => 'El riesgo debe existir (importa primero la matriz). clasificacion: Preventivo, Detectivo o Correctivo. efectividad: Fuerte, Moderado o Débil. mitiga_*: si/no (al menos uno). '
+                . 'clase (opcional): Actual si el control ya funciona o Propuesto si se va a implementar; vacía es Actual.',
             'preparar' => function (array $f, array &$ctx) {
                 $riesgo = uno('SELECT r.*, p.sigla FROM riesgos r JOIN procesos p ON p.id = r.proceso_id WHERE r.codigo = ? AND r.empresa_id = ? AND r.activo = 1', $f['riesgo_codigo'], $ctx['u']['empresa_id']);
                 if (!$riesgo) fila_mal("no existe el riesgo {$f['riesgo_codigo']}");
@@ -213,13 +214,14 @@ function importadores(): array {
                 if (!$mp && !$mi) fila_mal('debe mitigar la probabilidad, el impacto o ambos (si/no)');
                 return ['riesgo' => $riesgo, 'descripcion' => $f['descripcion'], 'clasificacion' => elegir($f['clasificacion'], ['Preventivo', 'Detectivo', 'Correctivo'], 'clasificacion'),
                     'efectividad' => !empty($f['efectividad']) ? elegir($f['efectividad'], ['Fuerte', 'Moderado', 'Débil'], 'efectividad') : 'Moderado',
+                    'clase' => !empty($f['clase']) ? elegir($f['clase'], CLASES_CONTROL, 'clase') : 'Actual',
                     'mp' => $mp ? 1 : 0, 'mi' => $mi ? 1 : 0, 'frecuencia' => ($f['frecuencia'] ?? '') ?: null, 'documentado' => si_no($f['documentado'] ?? '') ? 1 : 0,
                     'gestion' => persona_csv($ctx, $f['responsable_gestion'] ?? '', 'responsable_gestion'), 'revision' => persona_csv($ctx, $f['responsable_revision'] ?? '', 'responsable_revision'),
                     'resumen' => "{$f['riesgo_codigo']} · " . mb_substr($f['descripcion'], 0, 60)];
             },
             'aplicar' => function (array $d) {
-                ejecutar('INSERT INTO controles (riesgo_id, codigo, descripcion, clasificacion, mitiga_probabilidad, mitiga_impacto, efectividad, frecuencia, documentado, responsable_gestion_id, responsable_revision_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                    $d['riesgo']['id'], codigo_libre('controles', "C-{$d['riesgo']['sigla']}-"), $d['descripcion'], $d['clasificacion'], $d['mp'], $d['mi'], $d['efectividad'], $d['frecuencia'], $d['documentado'], $d['gestion'], $d['revision']);
+                ejecutar('INSERT INTO controles (riesgo_id, codigo, descripcion, clasificacion, clase, mitiga_probabilidad, mitiga_impacto, efectividad, frecuencia, documentado, responsable_gestion_id, responsable_revision_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                    $d['riesgo']['id'], codigo_libre('controles', "C-{$d['riesgo']['sigla']}-"), $d['descripcion'], $d['clasificacion'], $d['clase'], $d['mp'], $d['mi'], $d['efectividad'], $d['frecuencia'], $d['documentado'], $d['gestion'], $d['revision']);
             },
         ],
         'mediciones' => [

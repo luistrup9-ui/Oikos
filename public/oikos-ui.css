@@ -617,3 +617,78 @@ dialog form { grid-auto-rows: max-content; align-content: start; }
   .fila-es [name="es_entradas"], .fila-es [name="es_salidas"] { grid-column: 1 / 3; grid-row: auto; }
   .fila-es .quitar { grid-column: 1 / 3; grid-row: auto; }
 }
+
+/* ---- Evaluaciones: escala de 4 niveles, semáforo del nivel de gestión y barras por nivel ---- */
+.nivel { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px 3px 9px; border-radius: 999px; font: 700 12px/1.25 var(--letra); white-space: nowrap; }
+.nivel::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.nivel.verde { background: #d9f4e5; color: #0b7a45; } .nivel.amarillo { background: #fff0c7; color: #8a6100; }
+.nivel.rojo { background: #fddcda; color: #b3261e; } .nivel.gris { background: #e8ecee; color: #647478; }
+.barras-nivel { display: grid; gap: 12px; }
+.barra-nivel { display: grid; grid-template-columns: 190px minmax(0, 1fr) 84px 90px; align-items: center; gap: 14px; }
+.barra-nivel .pista { height: 22px; border-radius: 999px; background: rgba(0, 96, 96, .08); overflow: hidden; }
+.barra-nivel .pista i { display: block; height: 100%; min-width: 3px; border-radius: 999px; transition: width .6s var(--ui-ease); }
+.barra-nivel .pista i.verde { background: linear-gradient(90deg, #1fb36f, #0b7a45); } .barra-nivel .pista i.amarillo { background: linear-gradient(90deg, #f4c64a, #d9a400); }
+.barra-nivel .pista i.rojo { background: linear-gradient(90deg, #ee6f66, #c0362c); } .barra-nivel .pista i.gris { background: linear-gradient(90deg, #b7c2c5, #8a989c); }
+.barra-nivel b { text-align: right; font-variant-numeric: tabular-nums; }
+h4.cuestionario { margin: 14px 0 6px; font: 800 13.5px var(--letra-titulo); color: #00605d; letter-spacing: -.01em; }
+.hallazgo-plan { margin: 0 0 14px; padding: 14px 18px; border: 1px solid var(--ui-line); border-radius: 22px; background: rgba(255, 255, 255, .62); }
+.hallazgo-plan h4 { margin: 0 0 4px; font: 800 14.5px/1.35 var(--letra-titulo); }
+table tr.total td { border-top: 2px solid rgba(0, 128, 128, .28); background: rgba(0, 164, 160, .07); }
+@media (max-width: 720px) { .barra-nivel { grid-template-columns: 1fr 70px; } .barra-nivel .pista { grid-column: 1 / 3; } .barra-nivel small { display: none; } }
+
+/* ---- Estadísticas de controles: barras verticales (SVG) y búsqueda de la tabla ---- */
+.grafico-ctl { overflow-x: auto; padding: 4px 0 2px; }
+.grafico-ctl svg { display: block; width: 100%; max-width: calc(var(--ancho, 846px) * 1.3); height: auto; margin: 0 auto; overflow: visible; }
+@media (max-width: 720px) { .grafico-ctl svg { width: var(--ancho, 100%); max-width: none; } } /* en el teléfono el dibujo conserva su tamaño y se desliza de lado dentro de su caja */
+.grafico-ctl .rejilla { stroke: rgba(0, 96, 96, .16); stroke-dasharray: 3 6; }
+.grafico-ctl .eje-base { stroke: rgba(0, 96, 96, .4); stroke-width: 1.4; }
+.grafico-ctl text { font: 600 11.5px var(--letra); fill: var(--ui-ink-2); }
+.grafico-ctl text.marca { fill: var(--ui-ink-3); font-weight: 700; }
+.grafico-ctl text.titulo-eje { font: 800 12px var(--letra-titulo); fill: #00605d; letter-spacing: .02em; }
+.grafico-ctl text.valor { font: 800 14px var(--letra-titulo); fill: var(--ui-ink); }
+.grafico-ctl .barra path { transition: opacity .2s; }
+.grafico-ctl svg:hover .barra path { opacity: .55; } .grafico-ctl svg .barra:hover path { opacity: 1; }
+.grafico-ctl .barra:hover text.valor { fill: #007b78; }
+.buscar-tabla { width: min(240px, 100%); }
+#tablaCtl table { display: table; } /* en el celular las tablas de las tarjetas pasan a bloque (se encogen al contenido); esta tiene 3 columnas y debe ocupar todo el ancho */
+.cuenta-ctl { margin-left: auto; font-size: 12.5px; color: var(--ui-ink-2); }
+
+/* ---- Matriz de riesgos: mapa de calor con resumen por zona (torta), exposición apilada, distribución de escenarios y plan de acción ---- */
+.matriz-vista { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-bottom: 20px; }
+.matriz-vista > .tarjeta, .dist-doble > .tarjeta { margin-bottom: 0; }
+.resumen-zonas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px 22px; align-items: center; } /* torta y tabla lado a lado si caben; si no, una sobre la otra */
+.torta { display: block; width: 100%; max-width: 200px; height: auto; margin: 0 auto; filter: drop-shadow(0 14px 14px rgba(0, 56, 56, .24)); }
+.torta path, .torta circle { stroke: #fff; stroke-width: 2.5; stroke-linejoin: round; transition: opacity .2s; }
+.torta:hover path, .torta:hover circle { opacity: .6; } .torta path:hover, .torta circle:hover { opacity: 1; }
+.torta .Baja { fill: var(--z-Baja); } .torta .Moderada { fill: var(--z-Moderada); } .torta .Alta { fill: var(--z-Alta); } .torta .Extrema { fill: var(--z-Extrema); }
+.torta .vacia { fill: rgba(0, 96, 96, .09); }
+.torta text { font: 800 11px var(--letra-titulo); fill: #fff; pointer-events: none; } .torta text.Moderada { fill: #3a3000; }
+.tarjeta table.sin-dt { display: table; width: 100%; }
+.dist-doble { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 16px; font-size: 12.5px; font-weight: 600; color: var(--ui-ink-2); }
+.leyenda span::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 4px; vertical-align: -1px; }
+.leyenda .Baja::before, .expo-barra i.Baja { background: linear-gradient(145deg, #3fae78, #2e8b57); } .leyenda .Moderada::before, .expo-barra i.Moderada { background: linear-gradient(145deg, #e6c922, #cfaa00); }
+.leyenda .Alta::before, .expo-barra i.Alta { background: linear-gradient(145deg, #f09a2c, #dd7600); } .leyenda .Extrema::before, .expo-barra i.Extrema { background: linear-gradient(145deg, #dc4a4a, #b92222); }
+.expo { display: grid; gap: 10px; }
+.expo-fila { display: grid; grid-template-columns: minmax(120px, 26%) minmax(0, 1fr) 36px; align-items: center; gap: 12px; font-size: 13px; }
+.expo-nombre { text-align: right; font-weight: 600; line-height: 1.25; color: var(--ui-ink-2); }
+.expo-pista { height: 28px; border-radius: 99px; background: rgba(0, 96, 96, .07); overflow: hidden; }
+.expo-barra { display: flex; height: 100%; border-radius: 99px; overflow: hidden; box-shadow: 0 8px 14px -10px rgba(0, 56, 56, .5); transition: width .5s var(--ui-ease); }
+.expo-barra i { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; font: 800 11.5px var(--letra); font-style: normal; color: #fff; box-shadow: inset -1px 0 0 rgba(255, 255, 255, .35); }
+.expo-barra i.Moderada { color: #3a3000; } .expo-barra i:last-child { box-shadow: none; }
+.expo-total { font-variant-numeric: tabular-nums; }
+.balance-plan { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; } .balance-plan.atraso { color: #b3261e; } .balance-plan.adelanto { color: #0b7a45; }
+.nw { white-space: nowrap; }
+.acciones.con-campo { align-items: center; gap: 14px; }
+.agrupacion { color: var(--ui-ink-2); font-weight: 700; } .agrupacion input { width: 84px; }
+/* Tabla del plan de acción: más compacta para que quepan las diez columnas sin desplazarla de lado */
+.tabla-plan th, .tabla-plan td { padding-left: 9px; padding-right: 9px; } .tabla-plan th.ordenable { padding-right: 22px; }
+.tabla-plan .avance { width: 52px; }
+.tabla-plan .fechas span { display: block; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sub-th { display: block; margin-top: 1px; font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .65; }
+@media (max-width: 800px) {
+  .matriz-vista, .dist-doble { grid-template-columns: minmax(0, 1fr); }
+  .expo-fila { grid-template-columns: minmax(0, 1fr) 30px; gap: 4px 10px; }
+  .expo-nombre { grid-column: 1 / 3; text-align: left; }
+  .calor .eje { padding: 2px 0; font-size: 9.5px; line-height: 1.15; overflow-wrap: anywhere; hyphens: auto; } /* los rótulos de los ejes ya no se montan unos sobre otros */
+}

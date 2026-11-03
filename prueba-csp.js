@@ -40,6 +40,13 @@ mal("Ningún setAttribute('on...')", /setAttribute\(\s*["']on/i);
 // ---- Lo que sustituye a los onclick sí está atendido ----
 const app = leer('app.js');
 esperar('app.js atiende data-ir y data-imprimir con un solo manejador', /data-ir/.test(app) && /data-imprimir/.test(app) && /addEventListener\('click'/.test(app), null);
+// data-ir, data-imprimir y data-seleccionar son de app.js: ningún otro archivo los lee ni los usa como «dato» propio (ya pasó con los botones de
+// estado de la evaluación, que guardaban ahí «Ejecución» y terminaron navegando a #Ejecución). Para datos propios se usa otro nombre (data-estado...).
+const ajenos = [];
+for (const f of archivos.filter(f => f.endsWith('.js') && f !== 'app.js'))
+  for (const l of lineasCon(leer(f), /dataset\.(ir|imprimir|seleccionar)\b|\[data-(ir|imprimir|seleccionar)[\]=]/)) ajenos.push(`${f} ${l}`);
+esperar('Ningún otro archivo lee data-ir, data-imprimir ni data-seleccionar (son de app.js)', ajenos.length === 0, ajenos);
+esperar('El manejador de app.js solo navega a rutas internas (#/...)', /\/\^#\\\/\/\.test\(el\.getAttribute\('data-ir'\)\)/.test(app), null);
 // Todo data-ir que arme una plantilla debe empezar por «#/» o ser una expresión (el manejador solo cambia el hash)
 const raros = [];
 for (const f of archivos) for (const m of leer(f).matchAll(/data-ir="([^"]*)"/g)) if (!/^(#\/|\$\{)/.test(m[1])) raros.push(`${f}: ${m[1]}`);

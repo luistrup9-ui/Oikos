@@ -34,7 +34,7 @@ rutas.admin = async function () {
   if (!esCalidad()) { vista.innerHTML = '<p class="error">No tienes permiso para esta sección.</p>'; return; }
   const esAdmin = yo.rol === 'admin';
   const pestana = new URLSearchParams(location.hash.split('?')[1] || '').get('v') || (esAdmin ? 'usuarios' : 'importar');
-  const tabs = [...(esAdmin ? [['usuarios', 'Usuarios'], ['cargos', 'Cargos'], ['procesos', 'Procesos']] : []), ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
+  const tabs = [...(esAdmin ? [['usuarios', 'Usuarios'], ['cargos', 'Cargos'], ['procesos', 'Procesos']] : []), ['evaluaciones', 'Evaluaciones'], ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
   vista.innerHTML = `<div class="encabezado"><h2>Administración</h2></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" data-ir="#/admin?v=${k}">${n}</button>`).join('')}</div>
     <div id="cuerpo"></div>`;
@@ -42,6 +42,7 @@ rutas.admin = async function () {
   else if (pestana === 'procesos' && esAdmin) await pestanaProcesos();
   else if (pestana === 'cargos' && esAdmin) await pestanaCargos();
   else if (pestana === 'respaldos' && esAdmin) await pestanaRespaldos();
+  else if (pestana === 'evaluaciones') await pestanaEvaluaciones();
   else await pestanaImportar();
 };
 

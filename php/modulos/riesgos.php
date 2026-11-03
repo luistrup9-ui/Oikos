@@ -28,18 +28,23 @@ function puede_editar_riesgo(array $rg, array $u): bool { return es_calidad($u) 
 
 $R->get('/api/riesgos/catalogos', fn() => ['tipos' => TIPOS_RIESGO, 'probabilidad' => PROBABILIDAD, 'impacto' => IMPACTO, 'zonas' => ['Baja', 'Moderada', 'Alta', 'Extrema']]);
 
-$R->get('/api/riesgos', function (Peticion $req) {
+// Riesgos activos que cumplen los filtros de la matriz (proceso, tipo, texto y zona), ya valorados. El filtro de zona mira la zona residual
+// si matriz=residual y la absoluta en los demás casos. Lo comparten la lista y el plan de acción de la matriz (riesgos_vistas.php),
+// así todas las vistas cuentan los mismos riesgos. El Líder solo recibe los de sus procesos.
+function riesgos_filtrados(Peticion $req): array {
     $w = ['r.empresa_id = ?', 'r.activo = 1']; $p = [$req->u['empresa_id']];
     $procs = lista($req->q('proceso')); $tipos = lista($req->q('tipo'));
     if ($procs) { $w[] = 'r.proceso_id IN (' . marcas($procs) . ')'; array_push($p, ...$procs); }
     if ($tipos) { $w[] = 'r.tipo IN (' . marcas($tipos) . ')'; array_push($p, ...$tipos); }
     if ($req->q('texto')) { $w[] = '(r.nombre LIKE ? OR r.codigo LIKE ?)'; array_push($p, '%' . $req->q('texto') . '%', '%' . $req->q('texto') . '%'); }
-    $fr = filtro($req->u, 'r.proceso_id'); // el Líder solo ve los riesgos de sus procesos
+    $fr = filtro($req->u, 'r.proceso_id');
     $out = array_map('valorar', todos(SELECT_R . ' WHERE ' . implode(' AND ', $w) . $fr['sql'] . ' ORDER BY p.orden, r.codigo', ...array_merge($p, $fr['params'])));
     $zonas = lista($req->q('zona'));
     if ($zonas) $out = array_values(array_filter($out, fn($x) => in_array($req->q('matriz') === 'residual' ? $x['zona_residual'] : $x['zona'], $zonas, true)));
-    return array_map(fn($x) => $x + ['puede_editar' => puede_editar_riesgo($x, $req->u)], $out);
-});
+    return $out;
+}
+
+$R->get('/api/riesgos', fn(Peticion $req) => array_map(fn($x) => $x + ['puede_editar' => puede_editar_riesgo($x, $req->u)], riesgos_filtrados($req)));
 
 $R->get('/api/riesgos/:id', function (Peticion $req) {
     $rg = uno(SELECT_R . ' WHERE r.id = ? AND r.empresa_id = ?', $req->p('id'), $req->u['empresa_id']);
@@ -87,21 +92,29 @@ $R->delete('/api/riesgos/:id', function (Peticion $req) {
 });
 
 // ---------- Controles ----------
-$R->get('/api/controles', function (Peticion $req) {
+// Clase del control (Actual = ya funciona, Propuesto = se va a implementar); no es la clasificación (Preventivo, Detectivo, Correctivo)
+const CLASES_CONTROL = ['Actual', 'Propuesto'];
+// Filtros del listado y de las estadísticas de controles (los mismos): proceso, clasificación, texto y responsable (de gestión o de revisión)
+function filtro_controles(Peticion $req): array {
     $w = ['r.empresa_id = ?', 'r.activo = 1']; $p = [$req->u['empresa_id']];
     $procs = lista($req->q('proceso')); $clases = lista($req->q('clasificacion'));
     if ($procs) { $w[] = 'r.proceso_id IN (' . marcas($procs) . ')'; array_push($p, ...$procs); }
     if ($clases) { $w[] = 'c.clasificacion IN (' . marcas($clases) . ')'; array_push($p, ...$clases); }
     if ($req->q('texto')) { $w[] = '(c.descripcion LIKE ? OR c.codigo LIKE ? OR r.nombre LIKE ?)'; array_push($p, ...array_fill(0, 3, '%' . $req->q('texto') . '%')); }
     if ($req->q('responsable')) { $w[] = 'c.' . ($req->q('rol') === 'revision' ? 'responsable_revision_id' : 'responsable_gestion_id') . ' = ?'; $p[] = $req->q('responsable'); }
-    $fc = filtro($req->u, 'r.proceso_id');
+    $fc = filtro($req->u, 'r.proceso_id'); // el Líder solo ve los controles de sus procesos
+    return ['sql' => implode(' AND ', $w) . $fc['sql'], 'params' => array_merge($p, $fc['params'])];
+}
+
+$R->get('/api/controles', function (Peticion $req) {
+    $f = filtro_controles($req);
     return todos('SELECT c.*, r.codigo riesgo_codigo, r.nombre riesgo, r.id riesgo_id, pr.nombre proceso, g.nombre responsable_gestion, v.nombre responsable_revision FROM controles c
       JOIN riesgos r ON r.id = c.riesgo_id JOIN procesos pr ON pr.id = r.proceso_id
       LEFT JOIN usuarios g ON g.id = c.responsable_gestion_id LEFT JOIN usuarios v ON v.id = c.responsable_revision_id
-      WHERE ' . implode(' AND ', $w) . $fc['sql'] . ' ORDER BY pr.orden, r.codigo, c.codigo', ...array_merge($p, $fc['params']));
+      WHERE ' . $f['sql'] . ' ORDER BY pr.orden, r.codigo, c.codigo', ...$f['params']);
 });
 
-const CAMPOS_C = ['descripcion', 'clasificacion', 'mitiga_probabilidad', 'mitiga_impacto', 'efectividad', 'frecuencia', 'documentado', 'evidencia', 'responsable_gestion_id', 'responsable_revision_id'];
+const CAMPOS_C = ['descripcion', 'clasificacion', 'clase', 'mitiga_probabilidad', 'mitiga_impacto', 'efectividad', 'frecuencia', 'documentado', 'evidencia', 'responsable_gestion_id', 'responsable_revision_id'];
 function guardar_control(Peticion $req, $id = null): array {
     $b = $req->body; $riesgoId = $b['riesgo_id'] ?? null;
     if ($id) { $c = uno('SELECT * FROM controles WHERE id = ?', $id); if (!$c) falla(404, 'Control no encontrado'); $riesgoId = $c['riesgo_id']; }
@@ -111,7 +124,10 @@ function guardar_control(Peticion $req, $id = null): array {
     if (txt($b['descripcion'] ?? '') === '') falla(400, 'Describe el control');
     foreach (['mitiga_probabilidad', 'mitiga_impacto', 'documentado'] as $k) $b[$k] = (($b[$k] ?? null) === true || ($b[$k] ?? null) === 1 || ($b[$k] ?? null) === '1') ? 1 : 0;
     if (!$b['mitiga_probabilidad'] && !$b['mitiga_impacto']) falla(400, 'El control debe mitigar la probabilidad, el impacto o ambos');
-    $vals = array_map(fn($c) => $b[$c] ?? null, CAMPOS_C);
+    // Clase: al crear queda «Actual»; al editar sin enviarla se conserva la que ya tenía
+    $b['clase'] = txt($b['clase'] ?? '') ?: ($id ? $c['clase'] : 'Actual');
+    if (!in_array($b['clase'], CLASES_CONTROL, true)) falla(400, 'La clase del control es Actual o Propuesto');
+    $vals = array_map(fn($k) => $b[$k] ?? null, CAMPOS_C);
     if ($id) ejecutar('UPDATE controles SET ' . implode(', ', array_map(fn($c) => "$c = ?", CAMPOS_C)) . ' WHERE id = ?', ...array_merge($vals, [$id]));
     else {
         $sigla = uno('SELECT sigla FROM procesos WHERE id = ?', $rg['proceso_id'])['sigla'];

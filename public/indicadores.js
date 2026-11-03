@@ -97,8 +97,10 @@ async function editarPlanAccion(a, alTerminar) {
     <label class="ancho">Acción<input name="nombre" required value="${esc(a.nombre)}"></label>
     <label>Responsable<select name="responsable_id">${opciones(cat.usuarios.filter(u => u.rol !== 'consulta'), a.responsable_id ?? yo.id)}</select></label>
     <label>Avance (%)<input type="number" name="avance" min="0" max="100" value="${a.avance ?? 0}"></label>
-    <label>Inicio<input type="date" name="fecha_inicio" value="${esc(a.fecha_inicio)}"></label>
-    <label>Fin<input type="date" name="fecha_fin" value="${esc(a.fecha_fin)}"></label>
+    <label>Inicio planeado<input type="date" name="fecha_inicio" value="${esc(a.fecha_inicio)}"></label>
+    <label>Fin planeado<input type="date" name="fecha_fin" value="${esc(a.fecha_fin)}"></label>
+    <label>Inicio ejecutado<input type="date" name="fecha_inicio_real" value="${esc(a.fecha_inicio_real)}"></label>
+    <label>Fin ejecutado<input type="date" name="fecha_fin_real" value="${esc(a.fecha_fin_real)}"></label>
     <label class="ancho">Observaciones<textarea name="observaciones">${esc(a.observaciones)}</textarea></label></div>`);
   if (!v) return;
   try {
