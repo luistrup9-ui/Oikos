@@ -37,17 +37,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # cPanel responde HTTP 200 aunque la llamada falle: lo que manda es "status" (1 = bien) y "errors" del JSON
-          api() { curl -sS --max-time 180 -G -H "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" "https://${CPANEL_HOST}:2083/execute/VersionControl/$1" "${@:2}"; }
+          # Los secretos se pegan a mano: se quitan espacios y saltos de línea que se cuelan sin querer
+          CPANEL_HOST=$(printf %s "$CPANEL_HOST" | tr -d '[:space:]')
+          CPANEL_USER=$(printf %s "$CPANEL_USER" | tr -d '[:space:]')
+          CPANEL_TOKEN=$(printf %s "$CPANEL_TOKEN" | tr -d '[:space:]')
 
-          resp=$(api update --data-urlencode "repository_root=${CARPETA}" --data-urlencode "branch=${RAMA}")
-          echo "$resp" | jq '{status, errors, messages}'
-          [ "$(echo "$resp" | jq -r '.status // 0')" = "1" ] || { echo "::error::cPanel no pudo actualizar el repositorio"; exit 1; }
+          # api <función> [opciones de curl]: llama a cPanel y deja la respuesta JSON en cpanel.json.
+          # cPanel responde HTTP 200 aunque la llamada falle: lo que manda es "status" (1 = bien) y "errors" del JSON.
+          # Si lo que llega no es JSON (página de ingreso, bloqueo del firewall…), se muestra el código y el comienzo para saber qué pasó.
+          api() {
+            local codigo
+            codigo=$(curl -sS --max-time 180 -G -o cpanel.json -w '%{http_code}' -H "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
+              "https://${CPANEL_HOST}:2083/execute/VersionControl/$1" "${@:2}") \
+              || { echo "::error::No pude conectar con ${CPANEL_HOST}:2083 (¿el hosting bloquea las conexiones de GitHub?)"; return 1; }
+            if ! jq -e . cpanel.json >/dev/null 2>&1; then
+              echo "::error::cPanel respondió HTTP ${codigo} y no es JSON. Comienzo de la respuesta:"
+              head -c 400 cpanel.json | tr -d '\r'; echo
+              return 1
+            fi
+          }
+
+          api update --data-urlencode "repository_root=${CARPETA}" --data-urlencode "branch=${RAMA}"
+          jq '{status, errors, messages}' cpanel.json
+          [ "$(jq -r '.status // 0' cpanel.json)" = "1" ] || { echo "::error::cPanel no pudo actualizar el repositorio"; exit 1; }
 
           # Comprobar que de verdad quedó este commit (o uno más nuevo) y no el anterior
-          info=$(api retrieve)
-          sha=$(echo "$info" | jq -r --arg r "$CARPETA" '[.data[]? | select(.repository_root == $r)] | first | .last_update.identifier // empty')
-          [ -n "$sha" ] || { echo "::error::No pude leer qué commit quedó en cPanel"; echo "$info" | jq '{status, errors}'; exit 1; }
+          api retrieve
+          sha=$(jq -r --arg r "$CARPETA" '[.data[]? | select(.repository_root == $r)] | first | .last_update.identifier // empty' cpanel.json)
+          [ -n "$sha" ] || { echo "::error::No pude leer qué commit quedó en cPanel"; jq '{status, errors}' cpanel.json; exit 1; }
           echo "Commit en cPanel: $sha"
           estado=$(curl -fsS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${sha}" | jq -r '.status')
