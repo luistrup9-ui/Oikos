@@ -119,7 +119,7 @@ rutas.riesgos = async function () {
 
 async function editarRiesgo(x) {
   const cr = await catalogosRiesgo();
-  const procesos = esCalidad() ? cat.procesos : cat.procesos.filter(p => (yo.procesos_propios || [yo.proceso_id]).includes(p.id)); // su proceso y sus subprocesos
+  const procesos = procesosParaElegir(x.proceso_id, esCalidad() ? cat.procesos : cat.procesos.filter(p => (yo.procesos_propios || [yo.proceso_id]).includes(p.id))); // su proceso y sus subprocesos
   const escala = (n, lista, v) => `<select name="${n}" required>${lista.map((t, k) => `<option value="${k + 1}" ${Number(v) === k + 1 ? 'selected' : ''}>${k + 1} · ${esc(t)}</option>`).join('')}</select>`;
   const v = await modal(x.id ? 'Editar riesgo' : 'Nuevo riesgo', `<div class="form">
     <label class="ancho">Riesgo<input name="nombre" required value="${esc(x.nombre)}" placeholder="Posibilidad de… debido a… que genera…"></label>
@@ -155,11 +155,12 @@ rutas.riesgo = async function () {
     <div class="tarjeta flecha">
       <div class="caja"><span class="sub">Riesgo absoluto</span><b>${x.probabilidad} × ${x.impacto} = ${x.puntaje}</b>${zonaTag(x.zona)}</div>
       <span style="font-size:22px">→</span>
-      <div class="caja"><span class="sub">${x.total_controles} control(es)</span><b>−${x.puntaje - x.puntaje_residual}</b><span class="sub">puntos</span></div>
+      <div class="caja"><span class="sub">${x.controles_actuales} control(es) actual(es)</span><b>−${x.puntaje - x.puntaje_residual}</b><span class="sub">puntos</span></div>
       <span style="font-size:22px">→</span>
       <div class="caja"><span class="sub">Riesgo residual</span><b>${x.probabilidad_residual} × ${x.impacto_residual} = ${x.puntaje_residual}</b>${zonaTag(x.zona_residual)}</div>
       <p class="sub" style="flex:1;min-width:220px;margin:0">Cada control baja 2 niveles si es fuerte y 1 si es moderado; un control débil no baja nada.
-        Baja la probabilidad, el impacto o ambos, según lo que mitigue.</p>
+        Baja la probabilidad, el impacto o ambos, según lo que mitigue.
+        ${x.total_controles > x.controles_actuales ? `<br><b>${x.total_controles - x.controles_actuales} control(es) propuesto(s) no se cuentan:</b> empiezan a bajar el riesgo cuando pasan a la clase «Actual».` : ''}</p>
     </div>
     <div class="ficha">
       <div>
@@ -169,7 +170,7 @@ rutas.riesgo = async function () {
             <th>Efectividad</th><th>Responsables</th><th>Ejecutado ${mes}</th><th></th></tr></thead><tbody>
             ${x.controles.map((c, k) => `<tr><td class="mono">${esc(c.codigo)}</td><td>${esc(c.descripcion)}
                 <br><small class="sub">${esc(c.frecuencia || '')}${c.documentado ? ' · documentado' : ''}${c.evidencia ? ' · evidencia: ' + esc(c.evidencia) : ''}</small></td>
-              <td>${esc(c.clasificacion)}<br><small class="sub">Clase: ${esc(c.clase)}</small></td><td>${[c.mitiga_probabilidad ? 'Probabilidad' : '', c.mitiga_impacto ? 'Impacto' : ''].filter(Boolean).join(' y ')}</td>
+              <td>${esc(c.clasificacion)}<br><small class="sub">Clase: ${esc(c.clase)}${c.clase === 'Propuesto' ? ' · aún no cuenta en el residual' : ''}</small></td><td>${[c.mitiga_probabilidad ? 'Probabilidad' : '', c.mitiga_impacto ? 'Impacto' : ''].filter(Boolean).join(' y ')}</td>
               <td>${esc(c.efectividad)}</td><td><small>Gestión: ${esc(c.responsable_gestion || '—')}<br>Revisión: ${esc(c.responsable_revision || '—')}</small></td>
               <td>${c.ejecutado_mes == null ? '<span class="sub">Sin reporte</span>' : c.ejecutado_mes ? '✅ Sí' : '❌ No'}</td>
               <td><div class="acciones">${puedeMonitorear(c) ? `<button class="btn chico" data-mon="${k}">Reportar</button>` : ''}

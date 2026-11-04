@@ -118,9 +118,23 @@ const casi = (a, b) => Math.abs(a - b) < 0.005;
   const plantilla = await fetch(B + '/importar/controles/plantilla', { headers: { cookie: sesiones.calidad } });
   esperar('La plantilla de importación incluye la columna clase', /clase/.test(await plantilla.text()), plantilla.status);
 
-  // ---- La clase no cambia el cálculo del riesgo residual (los propuestos cuentan como siempre) ----
-  const rg = await llamar('consulta', '/riesgos/1');
-  esperar('El riesgo R-PRO-01 sigue calculando su residual con todos sus controles', rg.total_controles === 4 && rg.controles.some(c => c.clase === 'Propuesto'), rg.controles && rg.controles.map(c => c.codigo + ':' + c.clase));
+  // ---- El riesgo residual solo cuenta los controles «Actual»: un «Propuesto» todavía no baja el riesgo ----
+  let rg = await llamar('consulta', '/riesgos/1');
+  esperar('R-PRO-01: tiene 4 controles pero solo 3 actuales cuentan (C-PRO-03 es propuesto)', rg.total_controles === 4 && rg.controles_actuales === 3 && rg.controles.some(c => c.clase === 'Propuesto'), rg.controles && rg.controles.map(c => c.codigo + ':' + c.clase));
+  const alm = (await llamar('consulta', '/riesgos')).find(x => x.codigo === 'R-ALM-01');
+  rg = await llamar('consulta', '/riesgos/' + alm.id);
+  esperar('R-ALM-01 (3×5): 3 controles, 2 actuales; el propuesto «Fuerte» sobre la probabilidad NO la baja (sigue en 3)',
+    rg.total_controles === 3 && rg.controles_actuales === 2 && rg.probabilidad_residual === 3 && rg.impacto_residual === 3 && rg.puntaje_residual === 9 && rg.zona_residual === 'Moderada',
+    { total: rg.total_controles, actuales: rg.controles_actuales, p: rg.probabilidad_residual, i: rg.impacto_residual, zona: rg.zona_residual });
+  esperar('La lista de la matriz da el mismo residual que la ficha', (await llamar('consulta', '/riesgos')).find(x => x.id === alm.id).puntaje_residual === 9, null);
+  const prop = rg.controles.find(c => c.clase === 'Propuesto');
+  r = await llamar('calidad', `/controles/${prop.id}`, { descripcion: prop.descripcion, clasificacion: prop.clasificacion, clase: 'Actual', efectividad: prop.efectividad, mitiga_probabilidad: '1' }, 'PUT');
+  rg = await llamar('consulta', '/riesgos/' + alm.id);
+  esperar('Al pasar el control a «Actual» sí cuenta: la probabilidad residual baja de 3 a 1 (3 actuales)', r.status === 200 && rg.controles_actuales === 3 && rg.probabilidad_residual === 1 && rg.puntaje_residual === 3 && rg.zona_residual === 'Baja',
+    { r, actuales: rg.controles_actuales, p: rg.probabilidad_residual, zona: rg.zona_residual });
+  r = await llamar('calidad', `/controles/${prop.id}`, { descripcion: prop.descripcion, clasificacion: prop.clasificacion, clase: 'Propuesto', efectividad: prop.efectividad, mitiga_probabilidad: '1' }, 'PUT');
+  rg = await llamar('consulta', '/riesgos/' + alm.id);
+  esperar('Y al volver a «Propuesto» deja de contar: residual otra vez 3×3', r.status === 200 && rg.controles_actuales === 2 && rg.probabilidad_residual === 3 && rg.puntaje_residual === 9, { p: rg.probabilidad_residual, puntaje: rg.puntaje_residual });
 
   console.log(fallos ? `\n${fallos} prueba(s) fallaron` : '\nLas estadísticas de controles funcionan');
   process.exit(fallos ? 1 : 0);

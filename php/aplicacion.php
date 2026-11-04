@@ -19,7 +19,7 @@ function despues_de_responder(?callable $fn = null): array {
 }
 
 // Módulos ya pasados a PHP. Cada uno registra sus rutas en $R.
-const MODULOS = ['sesion', 'usuarios', 'cargos', 'documentos', 'procesos', 'indicadores', 'riesgos', 'riesgos_vistas', 'controles_estadisticas', 'auditorias', 'evaluaciones_param', 'mecanismos', 'glosario', 'calendario', 'importar', 'respaldos'];
+const MODULOS = ['sesion', 'usuarios', 'cargos', 'privilegios', 'estructura', 'grupos', 'documentos', 'procesos', 'indicadores', 'riesgos', 'riesgos_vistas', 'controles_estadisticas', 'auditorias', 'evaluaciones_param', 'mecanismos', 'glosario', 'calendario', 'cuenta', 'importar', 'respaldos'];
 
 $R = new Rutas();
 foreach (MODULOS as $m) require __DIR__ . "/modulos/$m.php";

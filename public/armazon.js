@@ -80,8 +80,8 @@ async function cargarPlan() {
 function cargarSistemas() {
   $('#arbolSistemas').innerHTML = nodo('01 Sistema de Gestión de Calidad', '#/mapa',
     ['Estratégico', 'Misional', 'Apoyo'].map(c => nodo(c, null,
-      cat.procesos.filter(p => p.categoria === c && !p.padre_id).map(function rama(p) {
-        const hijos = cat.procesos.filter(h => h.padre_id === p.id);
+      procesosVisibles().filter(p => p.categoria === c && !p.padre_id).map(function rama(p) {
+        const hijos = procesosVisibles().filter(h => h.padre_id === p.id);
         return hijos.length ? nodo(p.nombre, `#/proceso/${p.id}`, hijos.map(rama), { abierto: false }) : nodo(p.nombre, `#/proceso/${p.id}`);
       }), { abierto: false })));
 }
@@ -89,10 +89,14 @@ function cargarSistemas() {
 function cargarAdmin() {
   const esAdmin = yo.rol === 'admin';
   $('#arbolAdmin').innerHTML = nodo('Administración', '#/admin', [
-    nodo('Mecanismos de integración', '#/mecanismos'),
+    ...(esCalidad() ? [nodo('Mecanismos de integración', '#/mecanismos')] : []),
     ...(esAdmin ? [nodo('Usuarios', '#/admin?v=usuarios')] : []),
-    nodo('Evaluaciones', '#/admin?v=evaluaciones'),
-    nodo('Importar datos', '#/admin?v=importar'),
+    ...(puede('gestionar_estructura') ? [nodo('Estructura organizacional', '#/admin?v=estructura')] : []),
+    ...(puede('gestionar_cargos') ? [nodo('Cargos', '#/admin?v=cargos'), nodo('Campos del perfil', '#/admin?v=camposcargo')] : []),
+    ...(puede('gestionar_grupos') || yo.administra_grupos ? [nodo('Grupos de usuarios', '#/admin?v=grupos')] : []),
+    ...(esAdmin ? [nodo('Privilegios', '#/admin?v=privilegios')] : []),
+    ...(puede('gestionar_procesos') ? [nodo('Procesos', '#/admin?v=procesos')] : []),
+    ...(esCalidad() ? [nodo('Evaluaciones', '#/admin?v=evaluaciones'), nodo('Importar datos', '#/admin?v=importar')] : []),
     ...(esAdmin ? [nodo('Respaldos', '#/admin?v=respaldos')] : []),
   ]);
 }
@@ -128,7 +132,7 @@ document.addEventListener('sgi:sesion', () => {
   $('#chipNombre').textContent = nombre.split(/\s+/).slice(0, 2).join(' ');
   $('#chipRol').textContent = yo.cargo || ROLES[yo.rol] || '';
   mostrarPestana(guardado.leer('pestana') || 'plan');
-  cargarSistemas(); if (esCalidad()) cargarAdmin();
+  cargarSistemas(); if (puedeAdministrar()) cargarAdmin();
   intentar(cargarPlan)();
 });
 
@@ -164,7 +168,7 @@ rutas.bienvenida = async function () {
   const primerNombre = (yo.nombre || '').split(/\s+/)[0] || 'bienvenido';
   const fechaTexto = ahora.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const hasta = new Date(ahora); hasta.setDate(hasta.getDate() + 14);
+  const dias = yo.alerta_dias || 14, hasta = new Date(ahora); hasta.setDate(hasta.getDate() + dias); // alerta temprana: los días que cada persona eligió en Cuenta
   const ceros = (p, v) => p.catch(() => v);
 
   // Accesos de la página de inicio: solo los tres que no están en el menú de arriba (los demás módulos se abren desde ese menú y desde el panel izquierdo).
@@ -172,7 +176,7 @@ rutas.bienvenida = async function () {
   const modulos = [
     ['Mapa de procesos', '#/mapa', 'Estratégicos, misionales y de apoyo, y sus fichas.', 'mapa', 'estrategico'],
     ['Mi página', '#/inicio', 'Mis actividades, mi calendario y mi clave.', 'usuario', 'misional'],
-    ...(esCalidad() ? [['Administración', yo.rol === 'admin' ? '#/admin?v=usuarios' : '#/admin?v=importar', 'Usuarios, cargos, procesos y copias de seguridad.', 'engrane', 'estrategico']] : []),
+    ...(puedeAdministrar() ? [['Administración', '#/admin', 'Usuarios, estructura, cargos, grupos, procesos y copias de seguridad.', 'engrane', 'estrategico']] : []),
   ];
   vista.innerHTML = `<div class="inicio">
     <header class="ini-hero">
@@ -232,7 +236,7 @@ rutas.bienvenida = async function () {
     return `<li><a class="agenda-item ${esc(e.tipo)}${e.vencida ? ' vencida' : ''}" href="${esc(e.enlace)}">
       <span class="agenda-fecha${esHoy ? ' hoy' : ''}"><b>${d}</b><small>${esHoy ? 'hoy' : MESES_CORTOS[m - 1]}</small></span>
       <span class="agenda-tx"><b>${esc(e.titulo)}</b><small>${esc(TIPO_EVENTO[e.tipo] || '')}${e.detalle ? ' · ' + esc(e.detalle) : ''}${e.hora_inicio ? ' · ' + esc(e.hora_inicio) : ''}</small></span></a></li>`;
-  }).join('') : '<li class="agenda-vacia"><b>Nada para las próximas dos semanas.</b><small>Cuando te asignen reuniones, compromisos o mediciones, aparecen aquí solos.</small></li>';
+  }).join('') : `<li class="agenda-vacia"><b>Nada para ${dias === 14 ? 'las próximas dos semanas' : dias === 1 ? 'hoy ni mañana' : `los próximos ${dias} días`}.</b><small>Cuando te asignen reuniones, compromisos o mediciones, aparecen aquí solos.</small></li>`;
 };
 
 // ---------- Tablas como los listados de Almera: 15 registros por página y columnas ordenables ----------

@@ -69,9 +69,9 @@
     let idx = 0;
 
     ANILLOS.forEach((an, k) => {
-      const procesos = cat.procesos.filter(p => p.categoria === an.c && !p.padre_id), [r0, r1] = an.r, rm = (r0 + r1) / 2, items = [];
+      const procesos = procesosVisibles().filter(p => p.categoria === an.c && !p.padre_id), [r0, r1] = an.r, rm = (r0 + r1) / 2, items = [];
       reparto(procesos.length, rm).forEach((a, i) => {
-        const p = procesos[i], n = cuenta(p.id), subs = cat.procesos.filter(h => h.padre_id === p.id).map(h => h.nombre);
+        const p = procesos[i], n = cuenta(p.id), subs = procesosVisibles().filter(h => h.padre_id === p.id).map(h => h.nombre);
         const am = (a.a0 + a.a1) / 2, dx = Math.cos(rad(am)) * 7, dy = Math.sin(rad(am)) * 7;
         const { fs, lh, lineas } = ajustar(p.nombre, a, r0, r1, an.fs), tx = lineasSvg(idx, lineas, a, rm, fs, lh);
         const d = deg(5 / rm); // el borde redondeado sale de trazar el sector encogido 5 unidades con un trazo de 10

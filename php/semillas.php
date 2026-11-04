@@ -69,8 +69,11 @@ function sembrar_cargos(): int {
     if (!$empresa) return 0;
     return transaccion(function () use ($empresa) {
         $ids = [];
-        foreach (CARGOS_INICIALES as [$s, $n, $nombre])
-            $ids[$nombre] = ejecutar('INSERT INTO cargos (empresa_id, area_sigla, area, numero, nombre) VALUES (?,?,?,?,?)', $empresa['id'], $s, CARGOS_AREAS[$s], $n, $nombre);
+        foreach (CARGOS_INICIALES as [$s, $n, $nombre]) {
+            ejecutar('INSERT IGNORE INTO areas (empresa_id, sigla, nombre) VALUES (?,?,?)', $empresa['id'], $s, CARGOS_AREAS[$s]);   // cada cargo apunta a su área (areas.id)
+            $area = uno('SELECT id FROM areas WHERE empresa_id = ? AND sigla = ?', $empresa['id'], $s);
+            $ids[$nombre] = ejecutar('INSERT INTO cargos (empresa_id, area_id, area_sigla, area, numero, nombre) VALUES (?,?,?,?,?,?)', $empresa['id'], $area['id'], $s, CARGOS_AREAS[$s], $n, $nombre);
+        }
         foreach (CARGOS_INICIALES as [, , $nombre, $jefe]) if ($jefe) ejecutar('UPDATE cargos SET jefe_id = ? WHERE id = ?', $ids[$jefe], $ids[$nombre]);
         $usuarios = todos('SELECT id, nombre FROM usuarios WHERE empresa_id = ? AND cargo_id IS NULL', $empresa['id']);
         $palabras = fn($s) => preg_split('/\s+/', norm($s), -1, PREG_SPLIT_NO_EMPTY);

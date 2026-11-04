@@ -57,7 +57,7 @@ async function editarEvaluacion(e) {
     <label>Fecha inicio<input type="date" name="fecha_inicio" value="${esc(e.fecha_inicio)}"></label>
     <label>Fecha fin<input type="date" name="fecha_fin" value="${esc(e.fecha_fin)}"></label>
     <label class="ancho">Ciclo<select name="ciclo_id">${opciones(ca.ciclos, e.ciclo_id, '— Sin ciclo —')}</select></label>
-    <label class="ancho">Procesos a evaluar<select name="procesos" multiple style="min-height:150px">${cat.procesos.map(p =>
+    <label class="ancho">Procesos a evaluar<select name="procesos" multiple style="min-height:150px">${cat.procesos.filter(p => p.publicado !== 0 || elegidos.includes(p.id)).map(p =>
       `<option value="${p.id}" ${elegidos.includes(p.id) ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></label>
     <label class="ancho">Objetivo<textarea name="objetivo">${esc(e.objetivo)}</textarea></label>
     <label class="ancho">Alcance<textarea name="alcance">${esc(e.alcance)}</textarea></label>

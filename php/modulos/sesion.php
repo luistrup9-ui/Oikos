@@ -37,10 +37,18 @@ $R->post('/api/logout', function (Peticion $req) {
 });
 
 // procesos_propios: los procesos que lidera; null si no tiene restricción
-$R->get('/api/yo', fn(Peticion $req) => $req->u + [
-    'empresa' => uno('SELECT nombre FROM empresas WHERE id = ?', $req->u['empresa_id'])['nombre'] ?? null,
-    'procesos_propios' => propios($req->u),
-]);
+// dependencia: el área de su cargo; pagina_inicio y alerta_dias: lo que eligió en «Cuenta» (preferencias_de está en cuenta.php)
+$R->get('/api/yo', function (Peticion $req) {
+    $pref = preferencias_de((int)$req->u['id']);
+    return $req->u + [
+        'empresa' => uno('SELECT nombre FROM empresas WHERE id = ?', $req->u['empresa_id'])['nombre'] ?? null,
+        'procesos_propios' => propios($req->u),
+        'dependencia' => uno('SELECT c.area FROM usuarios u JOIN cargos c ON c.id = u.cargo_id WHERE u.id = ?', $req->u['id'])['area'] ?? null,
+        'pagina_inicio' => $pref['pagina_inicio'], 'alerta_dias' => $pref['alerta_dias'],
+        'administra_grupos' => administra_algun_grupo((int)$req->u['id']),   // administra algún grupo (puede cambiar sus miembros)
+        'privilegios' => privilegios_de($req->u),   // los que tiene ahora (el administrador, todos); ver privilegios.php
+    ];
+});
 
 $R->get('/api/catalogos', fn(Peticion $req) => [
     'procesos' => todos('SELECT * FROM procesos WHERE empresa_id = ? ORDER BY orden', $req->u['empresa_id']),

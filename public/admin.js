@@ -1,9 +1,7 @@
 // SGI — administración de usuarios e importación de datos, y cambio de clave propia
 const ROL_NOMBRE = ROLES; // definidos en app.js
 
-// Búsqueda de las listas de Administración: ¿el texto contiene lo escrito? (sin distinguir mayúsculas ni tildes)
-const sinAcentos = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const coincide = (texto, q) => sinAcentos(texto).includes(sinAcentos(q).trim());
+// Búsqueda de las listas de Administración (el comparador `coincide` está en app.js)
 const buscador = (q, texto) => `<input type="search" id="buscar" class="buscar-tabla" placeholder="${texto}" aria-label="${texto}" autocomplete="off" value="${esc(q)}">`;
 
 // ---------- Mi clave ----------
@@ -36,19 +34,27 @@ async function pedirCambioClave(obligatorio = false) {
 
 // ---------- Administración ----------
 rutas.admin = async function () {
-  if (!esCalidad()) { vista.innerHTML = '<p class="error">No tienes permiso para esta sección.</p>'; return; }
+  if (!puedeAdministrar()) { vista.innerHTML = '<p class="error">No tienes permiso para esta sección.</p>'; return; }
   const esAdmin = yo.rol === 'admin';
-  const pestana = new URLSearchParams(location.hash.split('?')[1] || '').get('v') || (esAdmin ? 'usuarios' : 'importar');
-  const tabs = [...(esAdmin ? [['usuarios', 'Usuarios'], ['cargos', 'Cargos'], ['procesos', 'Procesos']] : []), ['evaluaciones', 'Evaluaciones'], ['importar', 'Importar datos'], ...(esAdmin ? [['respaldos', 'Respaldos']] : [])];
+  // Cada pestaña sale según lo que la persona puede hacer: el rol (Administrador, Gestor de Calidad) o un privilegio que se le otorgó
+  const tabs = [
+    ...(esAdmin ? [['usuarios', 'Usuarios']] : []),
+    ...(puede('gestionar_estructura') ? [['estructura', 'Estructura']] : []),
+    ...(puede('gestionar_cargos') ? [['cargos', 'Cargos'], ['camposcargo', 'Campos del perfil']] : []),
+    ...(puede('gestionar_grupos') || yo.administra_grupos ? [['grupos', 'Grupos']] : []),
+    ...(esAdmin ? [['privilegios', 'Privilegios']] : []),
+    ...(puede('gestionar_procesos') ? [['procesos', 'Procesos']] : []),
+    ...(esCalidad() ? [['evaluaciones', 'Evaluaciones'], ['importar', 'Importar datos']] : []),
+    ...(esAdmin ? [['respaldos', 'Respaldos']] : []),
+  ];
+  const pedida = new URLSearchParams(location.hash.split('?')[1] || '').get('v');
+  const pestana = tabs.some(t => t[0] === pedida) ? pedida : tabs[0][0];
   vista.innerHTML = `<div class="encabezado"><h2>Administración</h2></div>
     <div class="tabs">${tabs.map(([k, n]) => `<button class="${k === pestana ? 'activo' : ''}" data-ir="#/admin?v=${k}">${n}</button>`).join('')}</div>
     <div id="cuerpo"></div>`;
-  if (pestana === 'usuarios' && esAdmin) await pestanaUsuarios();
-  else if (pestana === 'procesos' && esAdmin) await pestanaProcesos();
-  else if (pestana === 'cargos' && esAdmin) await pestanaCargos();
-  else if (pestana === 'respaldos' && esAdmin) await pestanaRespaldos();
-  else if (pestana === 'evaluaciones') await pestanaEvaluaciones();
-  else await pestanaImportar();
+  const pintar = { usuarios: pestanaUsuarios, estructura: pestanaEstructura, cargos: pestanaCargos, camposcargo: pestanaCamposCargo, grupos: pestanaGrupos, privilegios: pestanaPrivilegios,
+    procesos: pestanaProcesos, evaluaciones: pestanaEvaluaciones, importar: pestanaImportar, respaldos: pestanaRespaldos };
+  await pintar[pestana]();
 };
 
 const mostrarClave = (titulo, quien, clave) => modal(titulo, `<p>Entrégale esta clave temporal a <b>${esc(quien)}</b>. Se pide cambiarla al primer ingreso y no se vuelve a mostrar.</p>
@@ -59,10 +65,16 @@ async function pestanaUsuarios(q0 = '') {
   const [lista, cargos] = await Promise.all([api('/usuarios'), api('/cargos').catch(() => { aviso('El servidor no tiene el módulo de cargos: reinícialo (npm start) tras actualizar', true); return []; })]);
   // Líder: lista de casillas; cada proceso despliega sus subprocesos y se marcan uno por uno. Los demás roles: un proceso de referencia (opcional).
   const CATS = ['Estratégico', 'Misional', 'Apoyo'];
-  const hijosDe = id => cat.procesos.filter(h => h.padre_id === id);
+  // Un proceso no publicado no se ofrece, salvo que la persona ya lo lidere (o lidere un subproceso suyo): así guardar no le quita lo que ya tenía
+  const elegibles = (marcados = []) => {
+    const ver = new Set(marcados);
+    marcados.forEach(id => { for (let p = cat.procesos.find(x => x.id === id); p && p.padre_id; p = cat.procesos.find(x => x.id === p.padre_id)) ver.add(p.padre_id); });
+    return cat.procesos.filter(p => p.publicado !== 0 || ver.has(p.id));
+  };
+  const hijosDe = (id, marcados) => elegibles(marcados).filter(h => h.padre_id === id);
   const casilla = (p, marcados, clase) => `<label class="${clase}"><input type="checkbox" name="procesos" value="${p.id}" ${marcados.includes(p.id) ? 'checked' : ''}> ${esc(p.nombre)}</label>`;
-  const listaProcesos = (marcados = []) => `<div class="lista-procesos"><input type="hidden" name="procesos" value="">${CATS.map(c => `<p class="lp-cat">${c}</p>${cat.procesos.filter(p => !p.padre_id && p.categoria === c).map(p => {
-      const hs = hijosDe(p.id), abierto = hs.some(h => marcados.includes(h.id));
+  const listaProcesos = (marcados = []) => `<div class="lista-procesos"><input type="hidden" name="procesos" value="">${CATS.map(c => `<p class="lp-cat">${c}</p>${elegibles(marcados).filter(p => !p.padre_id && p.categoria === c).map(p => {
+      const hs = hijosDe(p.id, marcados), abierto = hs.some(h => marcados.includes(h.id));
       return `<div class="lp-proc">${hs.length ? `<button type="button" class="lp-flecha" aria-expanded="${abierto}" title="Ver subprocesos">▸</button>` : '<span class="lp-flecha vacia"></span>'}
         ${casilla(p, marcados, 'lp-nombre')}${hs.length ? `<small class="gris">${hs.length} subproceso${hs.length > 1 ? 's' : ''}</small>` : ''}</div>
         ${hs.length ? `<div class="lp-subs" ${abierto ? '' : 'hidden'}>${hs.map(h => casilla(h, marcados, 'lp-sub')).join('')}</div>` : ''}`; }).join('')}`).join('')}</div>`;
@@ -74,7 +86,7 @@ async function pestanaUsuarios(q0 = '') {
     <label>Nombre completo<input name="nombre" required value="${esc(u.nombre)}"></label>
     <label>Cargo<select name="cargo_id">${selectorCargo(u)}</select></label>
     <label>Rol<select name="rol">${Object.entries(ROL_NOMBRE).map(([k, n]) => `<option value="${k}" ${k === (u.rol || 'consulta') ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-    <label data-si-no-lider>Proceso <small>(opcional)</small><select name="proceso_id">${opciones(cat.procesos.filter(p => !p.padre_id), u.proceso_id, '— Ninguno —')}</select></label>
+    <label data-si-no-lider>Proceso <small>(opcional)</small><select name="proceso_id">${opciones(procesosParaElegir(u.proceso_id).filter(p => !p.padre_id), u.proceso_id, '— Ninguno —')}</select></label>
     <div class="ancho" data-si-lider><b>Procesos que lidera</b> <small class="gris">(marca los procesos y despliega ▸ para elegir sus subprocesos)</small>${listaProcesos(u.procesos)}</div></div>
     <p class="sub" style="margin:0">Administrador: todo, incluidos usuarios y procesos · Gestor de Calidad: todos los módulos · Líder: ve el mapa y los documentos vigentes de todos, y gestiona los procesos que tenga marcados · Colaborador: consulta, sin gestionar.</p>
     ${u.id ? `<p class="sub" style="margin:0">Usuario interno: <span class="mono">${esc(u.usuario)}</span> (también sirve para ingresar).</p>` : ''}`;
@@ -104,10 +116,10 @@ async function pestanaUsuarios(q0 = '') {
   const recargar = () => pestanaUsuarios(q);
   // La tabla se dibuja desde la lista filtrada; cada botón conserva la posición de su usuario en «lista»
   const dibujar = () => {
-    const filas = lista.map((u, i) => [u, i]).filter(([u]) => coincide(`${u.nombre} ${u.correo || ''} ${u.usuario}`, q));
-    $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table><thead><tr><th>Correo</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Procesos</th><th>Estado</th><th></th></tr></thead><tbody>
+    const filas = lista.map((u, i) => [u, i]).filter(([u]) => coincide(`${u.nombre} ${u.correo || ''} ${u.usuario} ${(u.grupos || []).map(g => g.nombre).join(' ')}`, q));
+    $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table><thead><tr><th>Correo</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Grupos</th><th>Procesos</th><th>Estado</th><th></th></tr></thead><tbody>
     ${filas.map(([u, i]) => `<tr style="${u.activo ? '' : 'opacity:.55'}"><td>${u.correo ? esc(u.correo) : '<span class="faltan">Sin correo</span>'}<br><small class="gris mono">${esc(u.usuario)}</small></td>
-      <td>${esc(u.nombre)}</td><td>${esc(u.cargo)}</td><td>${esc(ROL_NOMBRE[u.rol])}</td><td class="td-procesos">${procesosTexto(u)}</td>
+      <td>${esc(u.nombre)}</td><td>${esc(u.cargo)}</td><td>${esc(ROL_NOMBRE[u.rol])}</td><td>${u.grupos?.length ? u.grupos.map(g => `<span class="chip">${esc(g.nombre)}</span>`).join(' ') : '<span class="gris">—</span>'}</td><td class="td-procesos">${procesosTexto(u)}</td>
       <td>${u.activo ? 'Activo' : 'Inactivo'}${u.reinicio_solicitado && u.activo ? `<br><b class="pide-clave" title="Lo pidió el ${esc(u.reinicio_solicitado)}">Pidió restablecer su clave</b>` : ''}${u.debe_cambiar && u.activo ? '<br><small class="faltan">Debe cambiar su clave</small>' : ''}</td>
       <td><div class="acciones"><button class="btn chico" data-ed="${i}">Editar</button>
         <button class="btn chico ${u.reinicio_solicitado ? 'primario' : ''}" data-cl="${i}">Restablecer clave</button>
@@ -162,10 +174,9 @@ async function pestanaUsuarios(q0 = '') {
 
 // ---------- Cargos: estructura de cargos con código OIKOS (CAR-ÁREA-NN), jefe y personas ----------
 async function pestanaCargos(q0 = '') {
-  const [cargos, usuarios] = await Promise.all([api('/cargos'), api('/usuarios')]);
-  const areas = [...new Map(cargos.map(c => [c.area_sigla, c.area])).entries()];
+  const [cargos, usuarios, areas] = await Promise.all([api('/cargos'), api('/personas'), api('/areas')]);   // /personas: lo mínimo para reconocer a la gente (quien gestiona cargos no necesita ver usuarios)
   const ocupados = cargos.filter(c => c.personas.length).length;
-  $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${cargos.filter(c => c.activo).length} cargos activos en ${areas.length} áreas · ${ocupados} con personas asignadas</p>
+  $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${cargos.filter(c => c.activo).length} cargos activos en ${areas.filter(a => a.activo).length} áreas · ${ocupados} con personas asignadas</p>
     <div class="acciones">${buscador(q0, 'Buscar por cargo, área o persona…')}<button class="btn primario" id="nuevoCargo">Nuevo cargo</button></div></div>
     <p class="sub">Si cambia la persona que ocupa un cargo, usa «Personas» para reasignarlo: el código, el área y el jefe se conservan.</p>
     <div id="tablaLista"></div>`;
@@ -175,7 +186,7 @@ async function pestanaCargos(q0 = '') {
   const dibujar = () => {
     const filas = cargos.map((c, i) => [c, i]).filter(([c]) => coincide(`${c.nombre} ${c.codigo} ${c.area} ${c.personas.map(p => p.nombre).join(' ')}`, q));
     $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table class="tabla-cargos"><thead><tr><th>Código</th><th>Área</th><th>Cargo</th><th>Jefe</th><th>Personas</th><th>Activo</th><th></th></tr></thead><tbody>
-    ${filas.map(([c, i]) => `<tr style="${c.activo ? '' : 'opacity:.55'}"><td class="mono">${c.codigo}</td><td>${esc(c.area)}</td><td><b>${esc(c.nombre)}</b></td>
+    ${filas.map(([c, i]) => `<tr style="${c.activo ? '' : 'opacity:.55'}"><td class="mono">${c.codigo}</td><td>${esc(c.area)}</td><td><a href="#/cargo/${c.id}" title="Ver el perfil del cargo"><b>${esc(c.nombre)}</b></a></td>
       <td>${esc(c.jefe || '—')}</td><td>${c.personas.length ? c.personas.map(p => `<span class="chip">${esc(p.nombre)}</span>`).join(' ') : '<span class="gris">Vacante</span>'}</td>
       <td>${c.activo ? 'Sí' : 'No'}</td>
       <td><div class="acciones"><button class="btn chico" data-edc="${i}">Editar</button><button class="btn chico" data-per="${i}">Personas</button></div></td></tr>`).join('')}
@@ -184,8 +195,8 @@ async function pestanaCargos(q0 = '') {
   };
   $('#buscar').oninput = e => { q = e.target.value; dibujar(); };
   const campos = (c = {}) => `<div class="form">
-    <label>Área<select name="area_sigla" id="areaCargo">${areas.map(([s, a]) => `<option value="${s}" ${s === c.area_sigla ? 'selected' : ''}>${esc(a)} (${s})</option>`).join('')}
-      <option value="__nueva">+ Nueva área…</option></select></label>
+    <label>Área<select name="area_id" id="areaCargo">${areas.filter(a => a.activo || a.id === c.area_id).map(a => `<option value="${a.id}" ${a.id === c.area_id || (!c.area_id && a.sigla === c.area_sigla) ? 'selected' : ''}>${esc(a.nombre)} (${esc(a.sigla)})</option>`).join('')}
+      ${puede('gestionar_estructura') ? '<option value="__nueva">+ Nueva área…</option>' : ''}</select></label>
     <label>Número <small>(vacío = el siguiente libre)</small><input name="numero" type="number" min="1" max="999" value="${c.numero ?? ''}"></label>
     <div class="ancho" id="areaNueva" hidden><div class="form"><label>Sigla del área<input name="sigla_nueva" maxlength="6" placeholder="GPR"></label>
       <label>Nombre del área<input name="area_nueva" placeholder="Gerencia de Producción"></label></div></div>
@@ -199,7 +210,7 @@ async function pestanaCargos(q0 = '') {
     const ver = () => { caja.hidden = sel.value !== '__nueva'; };
     sel.onchange = ver; ver();
     const v = await p; if (!v) return null;
-    if (v.area_sigla === '__nueva') { v.area_sigla = v.sigla_nueva; v.area = v.area_nueva; } else v.area = areas.find(([s]) => s === v.area_sigla)?.[1];
+    if (v.area_id === '__nueva') { v.area_sigla = v.sigla_nueva; v.area = v.area_nueva; delete v.area_id; } else v.area_id = Number(v.area_id);
     delete v.sigla_nueva; delete v.area_nueva;
     if (c.id) v.activo = v.activo ? 1 : 0;
     return v;
@@ -232,20 +243,27 @@ async function pestanaCargos(q0 = '') {
 // ---------- Procesos: crear y editar procesos, subprocesos y procedimientos, y asignar quién los lidera ----------
 // Dos vistas de lo mismo: «Árbol» (por categoría, con sus líderes) y «Lista» (una fila por proceso, con filtros por tipo y clasificación, como el administrador de otra plataforma)
 async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
-  const lista = await api('/procesos-lideres');
+  const todas = await api('/procesos-lideres');
   const CATS = ['Estratégico', 'Misional', 'Apoyo'], TIPOS = ['Proceso', 'Subproceso', 'Procedimiento'];
+  // «No publicado» retira un proceso (y sus subprocesos) del mapa y de las listas sin borrar nada. Aquí se ocultan salvo que se marque «Incluir no publicados».
+  let incluirNP = !!filtro0.nopub;
+  const publicos = () => incluirNP ? todas : todas.filter(p => p.publicado !== 0);
+  let lista = publicos();
   const hijos = id => lista.filter(p => p.padre_id === id);
-  const nivelDe = p => p.padre_id ? 1 + nivelDe(lista.find(x => x.id === p.padre_id)) : 0;
+  const hijosT = id => todas.filter(p => p.padre_id === id), enArbolT = p => [p, ...hijosT(p.id).flatMap(enArbolT)];   // el árbol completo, para los formularios
+  const nivelDe = p => p.padre_id ? 1 + nivelDe(todas.find(x => x.id === p.padre_id)) : 0;
+  const esAdminRol = yo.rol === 'admin';   // asignar líderes cambia el rol de las personas: solo el administrador
+  const marcaNP = p => p.publicado === 0 ? ' <span class="chip" title="Retirado del mapa y de las listas; lo ya registrado se conserva">No publicado</span>' : '';
   const enArbol = p => [p, ...hijos(p.id).flatMap(enArbol)];                                           // cada proceso seguido de sus subprocesos, a cualquier profundidad
-  const enOrden = CATS.flatMap(c => lista.filter(p => !p.padre_id && p.categoria === c).flatMap(enArbol)); // orden de lectura: por categoría y, dentro, cada proceso con su rama
+  const enOrden = () => CATS.flatMap(c => lista.filter(p => !p.padre_id && p.categoria === c).flatMap(enArbol)); // orden de lectura: por categoría y, dentro, cada proceso con su rama
   const chips = p => p.lideres.map(l => `<span class="chip lider-chip" title="${esc(l.cargo || l.usuario)}">${esc(l.nombre)}
-        <button type="button" class="quitar-lider" data-quitar="${p.id}:${l.id}" aria-label="Quitar a ${esc(l.nombre)} como líder">×</button></span>`).join(' ');
+        ${esAdminRol ? `<button type="button" class="quitar-lider" data-quitar="${p.id}:${l.id}" aria-label="Quitar a ${esc(l.nombre)} como líder">×</button>` : ''}</span>`).join(' ');
   const textoDe = p => `${p.nombre} ${p.codigo || ''} ${p.lideres.map(l => l.nombre).join(' ')}`;
   // Vista árbol: cada proceso y cada subproceso tiene sus propios líderes
-  const fila = (p, nivel) => `<tr>
-    <td style="padding-left:${8 + nivel * 22}px">${nivel ? '<span class="gris">↳</span> ' : ''}${p.codigo ? `<span class="mono gris">${esc(p.codigo)}</span> ` : ''}<b>${esc(p.nombre)}</b>${nivel ? ` <span class="gris">${esc(p.tipo)}</span>` : ''}</td>
+  const fila = (p, nivel) => `<tr${p.publicado === 0 ? ' style="opacity:.6"' : ''}>
+    <td style="padding-left:${8 + nivel * 22}px">${nivel ? '<span class="gris">↳</span> ' : ''}${p.codigo ? `<span class="mono gris">${esc(p.codigo)}</span> ` : ''}<b>${esc(p.nombre)}</b>${nivel ? ` <span class="gris">${esc(p.tipo)}</span>` : ''}${marcaNP(p)}</td>
     <td>${p.lideres.length ? chips(p) : '<span class="faltan">Sin líder</span>'}</td>
-    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
+    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button>${esAdminRol ? `<button class="btn chico" data-lider="${p.id}">Asignar líder</button>` : ''}
       ${nivel ? '' : `<button class="btn chico" data-sub="${p.id}">Nuevo subproceso</button>`}</div></td></tr>`;
   // ver: conjunto de procesos que se muestran (null = todos). Con una búsqueda se ve lo que coincide con su rama completa (sus subprocesos) y los procesos de los que cuelga
   const rama = (p, nivel, ver) => !ver || ver.has(p.id) ? fila(p, nivel) + hijos(p.id).map(h => rama(h, nivel + 1, ver)).join('') : '';
@@ -254,11 +272,11 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
     return raices.length ? `<tr class="grupo-cat"><th colspan="3">${c}</th></tr>${raices.map(p => rama(p, 0, ver)).join('')}` : '';
   };
   // Vista lista: Clasificación, Padre, Tipo, Código, Nombre, Líder(es) y Versión; se ordena y se pagina como los demás listados
-  const filaLista = p => { const padre = lista.find(x => x.id === p.padre_id); return `<tr>
+  const filaLista = p => { const padre = todas.find(x => x.id === p.padre_id); return `<tr${p.publicado === 0 ? ' style="opacity:.6"' : ''}>
     <td>${esc(p.categoria)}</td><td>${padre ? esc(padre.nombre) : '<span class="gris">—</span>'}</td><td>${esc(p.tipo)}</td>
-    <td class="mono">${p.codigo ? esc(p.codigo) : '<span class="gris">—</span>'}</td><td><a href="#/proceso/${p.id}">${esc(p.nombre)}</a></td>
+    <td class="mono">${p.codigo ? esc(p.codigo) : '<span class="gris">—</span>'}</td><td><a href="#/proceso/${p.id}">${esc(p.nombre)}</a>${marcaNP(p)}</td>
     <td>${p.lideres.length ? chips(p) : '<span class="faltan">Sin líder</span>'}</td><td class="num">${p.version}</td>
-    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
+    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button>${esAdminRol ? `<button class="btn chico" data-lider="${p.id}">Asignar líder</button>` : ''}
       ${p.padre_id ? '' : `<button class="btn chico" data-sub="${p.id}">Nuevo subproceso</button>`}</div></td></tr>`; };
 
   let q = q0, modo = modo0, tipoF = filtro0.tipo || '', catF = filtro0.cat || ''; // lo buscado y la vista se conservan al guardar un cambio (la lista se vuelve a pedir)
@@ -268,8 +286,9 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
     lista.filter(p => coincide(textoDe(p), q)).forEach(p => { abajo(p); arriba(p); });
     return ver;
   };
-  $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${lista.filter(p => !p.padre_id).length} procesos y ${lista.filter(p => p.padre_id).length} subprocesos · ${lista.filter(p => p.lideres.length).length} con líder</p>
+  $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0" id="cuentaProc"></p>
     <div class="acciones">${buscador(q0, 'Buscar proceso o líder…')}
+      <label class="check en-linea"><input type="checkbox" id="verNP" ${incluirNP ? 'checked' : ''}> Incluir no publicados</label>
       <div class="tabs" style="margin:0" role="group" aria-label="Vista"><button type="button" data-modo="arbol">Árbol</button><button type="button" data-modo="lista">Lista</button></div>
       <button class="btn primario" id="nuevoProceso">Nuevo proceso</button></div></div>
     <p class="sub">Un Líder puede liderar varios procesos y subprocesos, y un proceso varios líderes. Al asignarlo a un proceso principal se le marcan también sus subprocesos; el detalle se ajusta en Usuarios → Editar. Ve el mapa y los documentos vigentes de todos, pero solo gestiona lo suyo.</p>
@@ -278,11 +297,13 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
       <label class="en-linea">Clasificación <select id="fCat"><option value="">Todas</option>${CATS.map(c => `<option ${c === catF ? 'selected' : ''}>${c}</option>`).join('')}</select></label></div>
     <div id="tablaLista"></div>`;
   const dibujar = () => {
+    const ocultos = todas.length - lista.length;
+    $('#cuentaProc').textContent = `${lista.filter(p => !p.padre_id).length} procesos y ${lista.filter(p => p.padre_id).length} subprocesos · ${lista.filter(p => p.lideres.length).length} con líder${ocultos ? ` · ${ocultos} no publicado${ocultos > 1 ? 's' : ''} oculto${ocultos > 1 ? 's' : ''}` : ''}`;
     $('#cuerpo').querySelectorAll('[data-modo]').forEach(b => b.classList.toggle('activo', b.dataset.modo === modo));
     $('#filtrosLista').hidden = modo !== 'lista';
     const sinResultados = `<p class="vacio">Ningún proceso coincide con ${q.trim() ? `«${esc(q)}»` : 'los filtros elegidos'}.</p>`;
     if (modo === 'lista') {
-      const filas = enOrden.filter(p => (!tipoF || p.tipo === tipoF) && (!catF || p.categoria === catF) && coincide(textoDe(p), q));
+      const filas = enOrden().filter(p => (!tipoF || p.tipo === tipoF) && (!catF || p.categoria === catF) && coincide(textoDe(p), q));
       $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table class="tabla-procesos tabla-lista-proc"><thead><tr><th>Clasificación</th><th>Padre</th><th>Tipo</th><th>Código</th><th>Nombre</th><th>Líder(es)</th><th class="num">Versión</th><th></th></tr></thead>
         <tbody>${filas.map(filaLista).join('')}</tbody></table></div>` : sinResultados;
     } else {
@@ -295,15 +316,16 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
   $('#cuerpo').querySelectorAll('[data-modo]').forEach(b => b.onclick = () => { modo = b.dataset.modo; dibujar(); });
   $('#fTipo').onchange = e => { tipoF = e.target.value; dibujar(); };
   $('#fCat').onchange = e => { catF = e.target.value; dibujar(); };
+  $('#verNP').onchange = e => { incluirNP = e.target.checked; lista = publicos(); dibujar(); };
 
-  const recargar = async () => { cat = await api('/catalogos'); cargarSistemas(); await pestanaProcesos(q, modo, { tipo: tipoF, cat: catF }); }; // el catálogo alimenta el mapa y el árbol lateral
+  const recargar = async () => { cat = await api('/catalogos'); cargarSistemas(); await pestanaProcesos(q, modo, { tipo: tipoF, cat: catF, nopub: incluirNP }); }; // el catálogo alimenta el mapa y el árbol lateral
 
   // Un solo formulario para crear y para editar. El tipo decide si es un proceso principal (con su categoría) o si cuelga de otro (y hereda su categoría).
   // Al editar, no puede colgar de sí mismo ni de sus subprocesos, y un proceso con subprocesos no puede ser un procedimiento.
-  const opcionesPadre = (tipo, elegido, excluidos) => '<option value="">— Elige —</option>' + lista.filter(p => !p.padre_id).flatMap(enArbol).filter(p => !excluidos.includes(p.id) && (tipo === 'Procedimiento' || !p.padre_id))
+  const opcionesPadre = (tipo, elegido, excluidos) => '<option value="">— Elige —</option>' + todas.filter(p => !p.padre_id).flatMap(enArbolT).filter(p => (p.publicado !== 0 || p.id === elegido) && !excluidos.includes(p.id) && (tipo === 'Procedimiento' || !p.padre_id))
     .map(p => `<option value="${p.id}" ${p.id === elegido ? 'selected' : ''}>${'↳ '.repeat(nivelDe(p))}${esc(p.nombre)}${p.padre_id ? ` (${esc(p.tipo)})` : ''}</option>`).join('');
   const formulario = async ({ titulo, aceptar, p = null, padreInicial = null }) => {
-    const excluidos = p ? enArbol(p).map(x => x.id) : [], tipos = p && hijos(p.id).length ? TIPOS.filter(t => t !== 'Procedimiento') : TIPOS;
+    const excluidos = p ? enArbolT(p).map(x => x.id) : [], tipos = p && hijosT(p.id).length ? TIPOS.filter(t => t !== 'Procedimiento') : TIPOS, nDesc = p ? enArbolT(p).length - 1 : 0;
     const abierto = modal(titulo, `<div class="form">
       <label class="ancho">Tipo<select name="tipo">${tipos.map(t => `<option ${t === (p ? p.tipo : padreInicial ? 'Subproceso' : 'Proceso') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       <label class="ancho" data-si-padre>Pertenece a <small>(el proceso del que cuelga)</small><select name="padre_id"></select></label>
@@ -312,7 +334,10 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
       ${p ? '' : '<label>Sigla <small>(opcional)</small><input name="sigla" maxlength="6"></label>'}
       <label class="ancho" data-si-proceso>Categoría<select name="categoria">${CATS.map(c => `<option ${c === (p?.categoria || 'Apoyo') ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <p class="sub ancho" style="margin:0" data-si-padre>Hereda la categoría del proceso al que pertenece. Un subproceso cuelga de un proceso; un procedimiento puede colgar de un proceso o de un subproceso.</p>
-      ${p ? '<p class="sub ancho" style="margin:0">Cada cambio queda como una versión nueva en el historial del proceso. Si cambia la categoría, también cambia la de sus subprocesos.</p>' : ''}</div>`, { aceptar });
+      ${p ? `<label class="ancho">Estado<select name="publicado"><option value="1" ${p.publicado === 0 ? '' : 'selected'}>Publicado</option><option value="0" ${p.publicado === 0 ? 'selected' : ''}>No publicado</option></select></label>
+        <label class="check ancho" data-si-publicar hidden><input type="checkbox" name="con_subprocesos" checked> Publicar también sus ${nDesc} subprocesos</label>
+        <p class="sub ancho" style="margin:0" data-si-retirar hidden>Un proceso «No publicado» deja de verse en el mapa, en el árbol y en las listas para elegir${nDesc ? `, y sus ${nDesc} subprocesos también` : ''}. No se borra nada: lo ya registrado se conserva.</p>
+        <p class="sub ancho" style="margin:0">Cada cambio queda como una versión nueva en el historial del proceso. Si cambia la categoría, también cambia la de sus subprocesos.</p>` : ''}</div>`, { aceptar });
     const f = $('#modalForm'), tipo = f.querySelector('[name=tipo]'), padreSel = f.querySelector('[name=padre_id]');
     const ver = () => {
       const cuelga = tipo.value !== 'Proceso', previo = Number(padreSel.value) || padreInicial?.id;
@@ -321,6 +346,14 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
       padreSel.innerHTML = opcionesPadre(tipo.value, previo, excluidos);
     };
     tipo.onchange = ver; ver();
+    const estadoSel = f.querySelector('[name=publicado]');
+    if (estadoSel) {
+      const verEstado = () => {
+        f.querySelector('[data-si-publicar]').hidden = !(nDesc && estadoSel.value === '1' && p.publicado === 0);   // al volver a publicar se ofrece publicar sus subprocesos
+        f.querySelector('[data-si-retirar]').hidden = estadoSel.value !== '0';
+      };
+      estadoSel.onchange = verEstado; verEstado();
+    }
     return abierto;
   };
   const nuevo = async (padre = null) => {
@@ -331,9 +364,9 @@ async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
     return r;
   };
   const editar = async p => {
-    const v = await formulario({ titulo: `Editar ${p.nombre}`, aceptar: 'Guardar', p, padreInicial: lista.find(x => x.id === p.padre_id) || null });
+    const v = await formulario({ titulo: `Editar ${p.nombre}`, aceptar: 'Guardar', p, padreInicial: todas.find(x => x.id === p.padre_id) || null });
     if (!v) return;
-    const r = await api(`/procesos/${p.id}/identidad`, { method: 'PUT', body: { nombre: v.nombre, codigo: v.codigo, tipo: v.tipo, ...(v.tipo === 'Proceso' ? { categoria: v.categoria } : { padre_id: Number(v.padre_id) }) } });
+    const r = await api(`/procesos/${p.id}/identidad`, { method: 'PUT', body: { nombre: v.nombre, codigo: v.codigo, tipo: v.tipo, publicado: Number(v.publicado), con_subprocesos: !!v.con_subprocesos, ...(v.tipo === 'Proceso' ? { categoria: v.categoria } : { padre_id: Number(v.padre_id) }) } });
     aviso(r.sin_cambios ? 'No cambió nada' : `${v.tipo} actualizado (versión ${r.version})`); await recargar();
   };
   $('#nuevoProceso').onclick = intentar(() => nuevo(null));

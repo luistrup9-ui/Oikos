@@ -232,3 +232,7 @@ INSERT IGNORE INTO parametros (empresa_id, clave, valor) VALUES (1,'evaluacion.c
 INSERT IGNORE INTO hallazgo_clasificaciones (empresa_id, nombre) VALUES (1,'Hallazgo');
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Áreas de los cargos de ejemplo (lo mismo que hacen las migraciones 019 y 020 con los cargos que ya existen)
+INSERT IGNORE INTO areas (empresa_id, sigla, nombre) SELECT empresa_id, area_sigla, MIN(area) FROM cargos GROUP BY empresa_id, area_sigla;
+UPDATE cargos c JOIN areas a ON a.empresa_id = c.empresa_id AND a.sigla = c.area_sigla SET c.area_id = a.id WHERE c.area_id IS NULL;

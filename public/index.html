@@ -9,7 +9,7 @@
   <link rel="preload" href="fuentes/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fuentes/sora-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="oikos-ui.css?v=16">
+  <link rel="stylesheet" href="oikos-ui.css?v=20">
 </head>
 <body>
   <div id="login" class="login" hidden>
@@ -115,6 +115,7 @@
           <button class="icono" id="actualizarPlan" title="Actualizar"><i class="ic ic-recargar"></i></button>
           <a class="boton" href="#/bienvenida" title="Ir a la página de inicio"><i class="ic ic-casa"></i>Inicio</a>
           <a class="boton" href="#/inicio" title="Mi perfil, mi calendario de actividades y el cambio de mi clave"><i class="ic ic-usuario"></i>Personal</a>
+          <a class="boton" href="#/cuenta" title="Mis avisos, mi firma y mis números de contacto"><i class="ic ic-engrane"></i>Cuenta</a>
         </div>
         <ul class="arbol-lat" id="arbolPlan"></ul>
       </div>
@@ -136,20 +137,23 @@
 
   <dialog id="modal"><button type="button" class="dlg-cerrar" aria-label="Cerrar" title="Cerrar"></button><form method="dialog" id="modalForm"></form></dialog>
   <div id="aviso" class="aviso" hidden></div>
-  <script src="app.js?v=3"></script>
-  <script src="indicadores.js?v=3"></script>
-  <script src="riesgos.js?v=5"></script>
+  <script src="app.js?v=6"></script>
+  <script src="indicadores.js?v=4"></script>
+  <script src="riesgos.js?v=6"></script>
   <script src="riesgos-vistas.js?v=2"></script>
   <script src="controles-estadisticas.js?v=1"></script>
-  <script src="auditorias.js?v=2"></script>
-  <script src="admin.js?v=5"></script>
-  <script src="eval-admin.js?v=5"></script>
+  <script src="auditorias.js?v=3"></script>
+  <script src="admin.js?v=9"></script>
+  <script src="estructura.js?v=2"></script>
+  <script src="grupos-privilegios.js?v=1"></script>
+  <script src="eval-admin.js?v=7"></script>
   <script src="glosario.js?v=2"></script>
   <script src="mecanismos.js?v=2"></script>
-  <script src="procesos.js?v=2"></script>
-  <script src="mapa.js?v=2"></script>
-  <script src="personal.js?v=2"></script>
-  <script src="armazon.js?v=4"></script>
+  <script src="procesos.js?v=3"></script>
+  <script src="mapa.js?v=3"></script>
+  <script src="personal.js?v=3"></script>
+  <script src="cuenta.js?v=1"></script>
+  <script src="armazon.js?v=7"></script>
   <script src="oikos-ui.js?v=3"></script>
 </body>
 </html>

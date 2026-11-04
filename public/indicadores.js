@@ -152,7 +152,7 @@ async function editarIndicador(i) {
   const sel = (n, lista, v) => `<select name="${n}">${lista.map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
   const v = await modal(i.id ? 'Editar indicador' : 'Nuevo indicador', `<div class="form">
     <label class="ancho">Nombre<input name="nombre" required value="${esc(i.nombre)}"></label>
-    <label>Proceso<select name="proceso_id" required>${opciones(cat.procesos, i.proceso_id ?? yo.proceso_id)}</select></label>
+    <label>Proceso<select name="proceso_id" required>${opciones(procesosParaElegir(i.proceso_id), i.proceso_id ?? yo.proceso_id)}</select></label>
     <label>Código<input name="codigo" value="${esc(i.codigo)}" placeholder="Automático"></label>
     <label class="ancho">Objetivo estratégico<select name="objetivo_id">${opciones(objetivos.map(o => ({ id: o.id, nombre: `${o.codigo} · ${o.nombre}` })), i.objetivo_id, '— Ninguno —')}</select></label>
     <label class="ancho">Propósito<input name="proposito" value="${esc(i.proposito)}"></label>
@@ -268,7 +268,7 @@ rutas.seguimiento = async function () {
   for (const c of ['Estratégico', 'Misional', 'Apoyo']) {
     filas += `<tr class="mop-cat" data-nodo="${c}"><td colspan="7"><span class="expansor"></span>${c}</td></tr>`;
     // Procesos raíz siempre; subprocesos solo si tienen indicadores propios
-    for (const p of cat.procesos.filter(p => p.categoria === c && (!p.padre_id || lista.some(i => i.proceso_id === p.id)))) {
+    for (const p of cat.procesos.filter(p => p.categoria === c && ((!p.padre_id && p.publicado !== 0) || lista.some(i => i.proceso_id === p.id)))) {
       const inds = lista.filter(i => i.proceso_id === p.id), id = 'p' + p.id;
       filas += `<tr class="mop-proc${inds.length ? '' : ' sin-hijos'}" data-nodo="${id}" data-padre="${c}"><td colspan="7"><span class="expansor"></span>${esc(p.nombre)}</td></tr>` +
         inds.map(i => `<tr class="mop-ind" data-padre="${id}"><td><a href="#/indicador/${i.id}?anio=${anio}" title="${esc(i.nombre)}">${esc(i.nombre)}</a></td>

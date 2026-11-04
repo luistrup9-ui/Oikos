@@ -13,13 +13,13 @@ CREATE TABLE IF NOT EXISTS procesos (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT, nombre VARCHAR(255) NOT NULL, sigla VARCHAR(20) NOT NULL,
   categoria VARCHAR(20) NOT NULL CHECK (categoria IN ('Estratégico','Misional','Apoyo')), orden INT,
   padre_id INT, tipo VARCHAR(30) NOT NULL DEFAULT 'Proceso', codigo VARCHAR(80), version INT NOT NULL DEFAULT 1,
-  fecha VARCHAR(30), almera_id INT, modificado VARCHAR(30),
+  fecha VARCHAR(30), almera_id INT, modificado VARCHAR(30), publicado TINYINT NOT NULL DEFAULT 1,
   FOREIGN KEY (empresa_id) REFERENCES empresas(id), FOREIGN KEY (padre_id) REFERENCES procesos(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS cargos (
   id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL, area_sigla VARCHAR(10) NOT NULL, area VARCHAR(200) NOT NULL,
-  numero INT NOT NULL, nombre VARCHAR(255) NOT NULL, jefe_id INT, activo TINYINT NOT NULL DEFAULT 1,
+  numero INT NOT NULL, nombre VARCHAR(255) NOT NULL, jefe_id INT, activo TINYINT NOT NULL DEFAULT 1, area_id INT NULL, responsabilidad TEXT NULL,
   UNIQUE KEY cargos_codigo (empresa_id, area_sigla, numero),
   FOREIGN KEY (empresa_id) REFERENCES empresas(id), FOREIGN KEY (jefe_id) REFERENCES cargos(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -36,6 +36,68 @@ CREATE TABLE IF NOT EXISTS usuarios (
 CREATE TABLE IF NOT EXISTS usuario_procesos (
   usuario_id INT NOT NULL, proceso_id INT NOT NULL, PRIMARY KEY (usuario_id, proceso_id),
   FOREIGN KEY (usuario_id) REFERENCES usuarios(id), FOREIGN KEY (proceso_id) REFERENCES procesos(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS usuario_preferencias (
+  usuario_id INT PRIMARY KEY,
+  notif_atraso TINYINT NOT NULL DEFAULT 0, dias_atraso INT NOT NULL DEFAULT 1,
+  notif_por_terminar TINYINT NOT NULL DEFAULT 0, dias_por_terminar INT NOT NULL DEFAULT 3,
+  alerta_dias INT NOT NULL DEFAULT 14,
+  pagina_inicio VARCHAR(20) NOT NULL DEFAULT 'bienvenida',
+  firma_archivo VARCHAR(64) NULL, firma_tipo VARCHAR(20) NULL,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS usuario_telefonos (
+  id INT PRIMARY KEY AUTO_INCREMENT, usuario_id INT NOT NULL, orden INT NOT NULL DEFAULT 0,
+  nombre VARCHAR(60) NOT NULL, prefijo VARCHAR(8) NOT NULL, numero VARCHAR(20) NOT NULL,
+  KEY usuario_telefonos_usuario (usuario_id),
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tipos_area (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL, nombre VARCHAR(100) NOT NULL, orden INT NOT NULL DEFAULT 0,
+  UNIQUE KEY tipos_area_nombre (empresa_id, nombre),
+  FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS areas (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL, sigla VARCHAR(10) NOT NULL, nombre VARCHAR(200) NOT NULL,
+  padre_id INT NULL, tipo_area_id INT NULL, orden INT NOT NULL DEFAULT 0, activo TINYINT NOT NULL DEFAULT 1,
+  UNIQUE KEY areas_sigla (empresa_id, sigla),
+  FOREIGN KEY (empresa_id) REFERENCES empresas(id), FOREIGN KEY (padre_id) REFERENCES areas(id), FOREIGN KEY (tipo_area_id) REFERENCES tipos_area(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cargo_campos (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL, agrupador VARCHAR(200) NULL, codigo VARCHAR(40) NOT NULL,
+  nombre VARCHAR(200) NOT NULL, tipo VARCHAR(20) NOT NULL DEFAULT 'texto', opciones TEXT NULL, alias VARCHAR(60) NULL,
+  orden INT NOT NULL DEFAULT 0, activo TINYINT NOT NULL DEFAULT 1,
+  UNIQUE KEY cargo_campos_codigo (empresa_id, codigo),
+  FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cargo_valores (
+  cargo_id INT NOT NULL, campo_id INT NOT NULL, valor TEXT NULL,
+  PRIMARY KEY (cargo_id, campo_id),
+  FOREIGN KEY (cargo_id) REFERENCES cargos(id) ON DELETE CASCADE, FOREIGN KEY (campo_id) REFERENCES cargo_campos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS grupos (
+  id INT PRIMARY KEY AUTO_INCREMENT, empresa_id INT NOT NULL, nombre VARCHAR(120) NOT NULL, por_defecto TINYINT NOT NULL DEFAULT 0,
+  creado_por INT NULL, creado VARCHAR(30) NULL,
+  UNIQUE KEY grupos_nombre (empresa_id, nombre),
+  FOREIGN KEY (empresa_id) REFERENCES empresas(id), FOREIGN KEY (creado_por) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS grupo_miembros (
+  grupo_id INT NOT NULL, usuario_id INT NOT NULL, administrador TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (grupo_id, usuario_id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id) ON DELETE CASCADE, FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS privilegios_otorgados (
+  privilegio VARCHAR(40) NOT NULL, tipo VARCHAR(10) NOT NULL, ref_id INT NOT NULL, otorgado_por INT NULL, fecha VARCHAR(30) NULL,
+  PRIMARY KEY (privilegio, tipo, ref_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS sesiones (

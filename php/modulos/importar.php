@@ -128,6 +128,7 @@ function importadores(): array {
                 $id = ejecutar('INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, cargo_id, rol, proceso_id, clave, activo, debe_cambiar) VALUES (?,?,?,?,?,?,?,?,?,1,1)',
                     $ctx['u']['empresa_id'], $usuario, $d['correo'], $d['nombre'], $d['cargo'], $d['cargo_id'], $d['rol'], $d['proceso_id'], hash_clave($clave));
                 if ($d['rol'] === 'lider_proceso') guardar_procesos($id, $d['procesos']);
+                unir_a_grupos_por_defecto((int)$id, (int)$ctx['u']['empresa_id']);
                 $ctx['claves'][] = ['usuario' => $d['correo'], 'nombre' => $d['nombre'], 'clave_temporal' => $clave];
             },
         ],

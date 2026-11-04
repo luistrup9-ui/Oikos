@@ -366,6 +366,50 @@ const PRUEBA = { admin: ['admin@oikos.test', 'admin123'], calidad: ['gestor@oiko
   h = await llamar('admin', `/procesos/${idPA}/historial`);
   esperar('Cada cambio de lugar queda en el historial', h.length >= 5 && h.some(x => /pasa a pertenecer a «Otro proceso principal»/.test(x.comentario)), h.map(x => x.comentario));
 
+  // ---- Publicación: «No publicado» retira un proceso (y todo lo que cuelga de él) sin borrar nada ----
+  const R1 = (await llamar('admin', '/procesos', { nombre: 'Proceso a retirar', categoria: 'Apoyo' })).id;
+  const S1 = (await llamar('admin', '/procesos', { nombre: 'Subproceso a retirar', padre_id: R1, tipo: 'Subproceso' })).id;
+  const P1 = (await llamar('admin', '/procesos', { nombre: 'Procedimiento a retirar', padre_id: S1, tipo: 'Procedimiento' })).id;
+  const flags = async () => { const l = await llamar('admin', '/procesos-lideres'); return [R1, S1, P1].map(i => l.find(p => p.id === i).publicado).join(''); };
+  const base = (id, extra = {}) => ({ nombre: { [R1]: 'Proceso a retirar', [S1]: 'Subproceso a retirar', [P1]: 'Procedimiento a retirar' }[id], tipo: id === R1 ? 'Proceso' : id === S1 ? 'Subproceso' : 'Procedimiento',
+    ...(id === R1 ? { categoria: 'Apoyo' } : { padre_id: id === S1 ? R1 : S1 }), ...extra });
+  esperar('Un proceso nuevo nace publicado, y también su subproceso y su procedimiento', await flags() === '111', await flags());
+  const riesgoEnS1 = await llamar('admin', '/riesgos', { proceso_id: S1, nombre: 'Riesgo registrado en un subproceso que luego se retira', tipo: 'Calidad', probabilidad: 3, impacto: 3 });
+  r = await llamar('calidad', `/procesos/${R1}/identidad`, base(R1, { publicado: 0 }), 'PUT');
+  esperar('Solo el administrador retira un proceso (Calidad no)', r.status === 403 && await flags() === '111', r);
+  r = await ident(R1, base(R1, { publicado: 0 }));
+  esperar('Retirar el proceso lo deja «No publicado» y arrastra a su subproceso y a su procedimiento', r.ok && r.version === 2 && await flags() === '000', [r, await flags()]);
+  h = await llamar('admin', `/procesos/${R1}/historial`);
+  esperar('El historial lo anota, con cuántos subprocesos se fueron con él', /deja de estar publicado \(con sus 2 subprocesos\)/.test(h[0].comentario), h[0]);
+  const cat2 = await llamar('admin', '/catalogos');
+  esperar('El catálogo trae la marca «publicado: 0» para que la pantalla los saque del mapa y de las listas', [R1, S1, P1].every(i => cat2.procesos.find(p => p.id === i)?.publicado === 0) && cat2.procesos.filter(p => p.publicado === 1).length > 3, cat2.procesos.filter(p => p.publicado === 0).length);
+  r = await llamar('admin', `/riesgos/${riesgoEnS1.id}`);
+  esperar('Lo ya registrado se conserva: el riesgo del subproceso retirado sigue existiendo, con su proceso', r.id === riesgoEnS1.id && r.proceso === 'Subproceso a retirar', r);
+  r = await ident(R1, base(R1, { publicado: 0 }));
+  esperar('Guardar otra vez «No publicado» sin más cambios no crea versión', r.ok && r.sin_cambios && r.version === 2, r);
+  r = await ident(R1, { nombre: 'Proceso a retirar', tipo: 'Proceso', categoria: 'Apoyo', codigo: 'ES-RET-DAR-01' });
+  esperar('Si el cuerpo no trae «publicado», el estado no cambia (sigue No publicado)', r.ok && r.version === 3 && await flags() === '000', [r, await flags()]);
+  const nuevoHijo = await llamar('admin', '/procesos', { nombre: 'Subproceso creado después', padre_id: R1, tipo: 'Subproceso' });
+  esperar('Un subproceso creado bajo un proceso no publicado nace no publicado', (await de(nuevoHijo.id)).publicado === 0, await de(nuevoHijo.id));
+  r = await ident(S1, base(S1, { publicado: 1 }));
+  esperar('No se puede publicar un subproceso mientras su proceso siga sin publicar', r.status === 400 && /no se puede publicar/i.test(r.error) && await flags() === '000', r);
+  r = await ident(R1, { nombre: 'Proceso a retirar', codigo: 'ES-RET-DAR-01', tipo: 'Proceso', categoria: 'Apoyo', publicado: 1, con_subprocesos: false });
+  esperar('Publicar el proceso sin sus subprocesos: él sí, ellos siguen retirados', r.ok && await flags() === '100', [r, await flags()]);
+  r = await ident(S1, base(S1, { publicado: 1, con_subprocesos: false }));
+  esperar('Ahora sí se puede publicar el subproceso (su procedimiento sigue retirado)', r.ok && await flags() === '110', [r, await flags()]);
+  r = await ident(R1, { nombre: 'Proceso a retirar', codigo: 'ES-RET-DAR-01', tipo: 'Proceso', categoria: 'Apoyo', publicado: 0 });
+  r = await ident(R1, { nombre: 'Proceso a retirar', codigo: 'ES-RET-DAR-01', tipo: 'Proceso', categoria: 'Apoyo', publicado: 1 });
+  esperar('Volver a publicar con la opción por defecto devuelve también todos sus subprocesos', r.ok && await flags() === '111' && (await de(nuevoHijo.id)).publicado === 1, [r, await flags()]);
+  h = await llamar('admin', `/procesos/${R1}/historial`);
+  esperar('El historial anota «se publica (con sus 3 subprocesos)»', /se publica \(con sus 3 subprocesos\)/.test(h[0].comentario), h[0].comentario);
+  // Mover un proceso publicado bajo uno no publicado lo deja no publicado, con lo suyo
+  const sueltoP = (await llamar('admin', '/procesos', { nombre: 'Proceso que se muda', categoria: 'Apoyo' })).id;
+  const sueltoS = (await llamar('admin', '/procesos', { nombre: 'Hijo del que se muda', padre_id: sueltoP, tipo: 'Subproceso' })).id;
+  await ident(R1, { nombre: 'Proceso a retirar', codigo: 'ES-RET-DAR-01', tipo: 'Proceso', categoria: 'Apoyo', publicado: 0 });
+  r = await ident(sueltoP, { nombre: 'Proceso que se muda', tipo: 'Subproceso', padre_id: R1, publicado: 1 });
+  esperar('Un proceso publicado que pasa a colgar de uno no publicado queda no publicado, con su subproceso', r.ok && (await de(sueltoP)).publicado === 0 && (await de(sueltoS)).publicado === 0, [await de(sueltoP), await de(sueltoS)]);
+  esperar('Los procesos de siempre siguen publicados', (await llamar('admin', '/procesos-lideres')).filter(p => p.publicado === 0).length === 6, (await llamar('admin', '/procesos-lideres')).filter(p => p.publicado === 0).map(p => p.nombre));
+
   console.log(fallos ? `\n${fallos} prueba(s) fallaron` : '\nTodo el módulo de administración funciona');
   process.exit(fallos ? 1 : 0);
 })();

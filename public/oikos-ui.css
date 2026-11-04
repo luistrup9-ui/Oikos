@@ -700,3 +700,46 @@ table tr.total td { border-top: 2px solid rgba(0, 128, 128, .28); background: rg
 .tabla-lista-proc .lider-chip { display: inline-flex; max-width: 170px; white-space: normal; line-height: 1.25; }
 .tabla-lista-proc td .acciones { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
 .tabla-lista-proc td .acciones .btn { white-space: nowrap; text-align: center; }
+
+/* ---- Página individual: Cuenta (avisos, personalizar, firma mecánica y números de contacto) ---- */
+.cuenta-rejilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.cuenta-col { display: grid; gap: 20px; min-width: 0; } .cuenta-col > .tarjeta { margin-bottom: 0; }
+.cuenta-pie { grid-column: 1 / -1; justify-content: flex-end; }
+.fila-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 12px 0; border-bottom: 1px solid var(--ui-line); }
+.fila-aviso:first-of-type { padding-top: 0; }
+.fila-aviso input[type=number] { width: 84px; }
+.firma-vista { display: grid; place-items: center; min-height: 130px; padding: 12px; border: 1.5px dashed rgba(0, 96, 96, .3); border-radius: 18px; background: #fff; }
+.firma-vista img { max-width: 100%; max-height: 150px; }
+.fila-tel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+.fila-tel input, .fila-tel select { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 800px) {
+  .cuenta-rejilla { grid-template-columns: minmax(0, 1fr); }
+  .fila-tel { grid-template-columns: minmax(0, 1fr) auto; } .fila-tel [name=t_prefijo], .fila-tel [name=t_numero] { grid-column: 1; }
+  .fila-tel [data-quitar-tel] { grid-column: 2; grid-row: 1; }
+}
+label.btn { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; cursor: pointer; } /* un «label» con aspecto de botón (p. ej. «Subir firma») va en una línea */
+@media (min-width: 801px) { .fila-tel { grid-template-columns: minmax(0, .9fr) minmax(0, 1.55fr) minmax(0, 1fr) auto; } }
+
+/* Estructura organizacional: árbol de áreas y cargos, perfil del cargo, miembros de un grupo y privilegios */
+.arbol-estructura { background: rgba(255, 255, 255, .72); border: 1px solid var(--ui-line); border-radius: 20px; padding: 14px 16px; }
+.nodo-raiz { font-weight: 800; font-size: 17px; color: #00605d; padding: 2px 4px 8px; }
+.nodo-cuerpo { margin-left: 14px; padding-left: 14px; border-left: 2px solid rgba(0, 164, 160, .25); display: grid; gap: 4px; }
+.nodo-area > summary { cursor: pointer; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; padding: 7px 10px; border-radius: 12px; list-style: none; }
+.nodo-area > summary::-webkit-details-marker { display: none; }
+.nodo-area > summary::before { content: '▸'; color: #00a4a0; transition: transform .15s; width: 12px; }
+.nodo-area[open] > summary::before { transform: rotate(90deg); }
+.nodo-area > summary:hover { background: rgba(0, 164, 160, .08); }
+.nodo-nombre { font-weight: 700; }
+.acciones-nodo { margin-left: auto; display: inline-flex; gap: 6px; }
+.nodo-cargo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 5px 10px; border-radius: 10px; }
+.nodo-cargo:hover { background: rgba(0, 164, 160, .06); }
+.nodo-personas { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.nodo-area.inactiva > summary, .nodo-cargo.inactiva { opacity: .55; }
+.lista-simple { margin: 0; padding-left: 18px; display: grid; gap: 5px; }
+.lista-simple .mono, .nodo-cargo .mono { white-space: nowrap; }
+.fila-miembro { display: flex; align-items: center; gap: 8px; }
+.fila-miembro > span:first-of-type { flex: 1; min-width: 0; }
+.fila-miembro .adm { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: var(--ui-suave, #5b7573); }
+.tabla-privilegios td { vertical-align: middle; }
+.centro-txt { text-align: center; color: #00a4a0; font-weight: 800; font-size: 18px; }
+@media (max-width: 800px) { .nodo-cuerpo { margin-left: 6px; padding-left: 8px; } .acciones-nodo, .nodo-personas { margin-left: 0; } .fila-miembro { flex-wrap: wrap; } }

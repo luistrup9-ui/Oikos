@@ -19,9 +19,13 @@ function residual(array $riesgo, array $controles): array {
 
 const SELECT_R = 'SELECT r.*, p.nombre proceso, p.sigla proceso_sigla, p.orden proceso_orden, u.nombre responsable FROM riesgos r
   JOIN procesos p ON p.id = r.proceso_id LEFT JOIN usuarios u ON u.id = r.responsable_id';
+// El riesgo residual solo cuenta los controles «Actual» (los que ya funcionan); uno «Propuesto» todavía no baja el riesgo y empieza a contar
+// cuando pasa a «Actual». «total_controles» sigue siendo todos los controles del riesgo y «controles_actuales» los que entran en el cálculo.
 function valorar(array $rg): array {
     $controles = todos('SELECT * FROM controles WHERE riesgo_id = ?', $rg['id']);
-    return array_merge($rg, ['zona' => zona($rg['probabilidad'], $rg['impacto']), 'puntaje' => $rg['probabilidad'] * $rg['impacto'], 'total_controles' => count($controles)], residual($rg, $controles));
+    $actuales = array_values(array_filter($controles, fn($c) => ($c['clase'] ?? 'Actual') !== 'Propuesto'));
+    return array_merge($rg, ['zona' => zona($rg['probabilidad'], $rg['impacto']), 'puntaje' => $rg['probabilidad'] * $rg['impacto'],
+        'total_controles' => count($controles), 'controles_actuales' => count($actuales)], residual($rg, $actuales));
 }
 // Calidad administra todo; el Líder, los riesgos de sus procesos
 function puede_editar_riesgo(array $rg, array $u): bool { return es_calidad($u) || lidera($rg['proceso_id'] ?? null, $u); }

@@ -43,7 +43,7 @@ Navegador ──HTTPS──▶ Apache (cPanel)
    - Más adelante, para crear otro administrador o recuperar el acceso si se pierden las claves:
      `php herramientas/crear-admin.php correo@empresa.com --nombre="Nombre Apellido"` (ver README, «Tu acceso de administrador»).
 6. **HTTPS** — cPanel → «SSL/TLS Status» → AutoSSL para el subdominio.
-7. Abre `https://oikos.metalcof.co/healthz`: debe responder `{"ok":true,"php":"8.x", "modulos":[…16 módulos…]}`.
+7. Abre `https://oikos.metalcof.co/healthz`: debe responder `{"ok":true,"php":"8.x", "modulos":[…20 módulos…]}`.
 
 ## Copias de seguridad
 - Cada copia es un `.tar.gz` con la base completa (`oikos.sql`) y los adjuntos. Se guardan en `datos/respaldos/` y se conservan las últimas 30 (`respaldos_conservar`).

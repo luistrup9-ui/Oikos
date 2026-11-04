@@ -99,17 +99,17 @@ function lideres_de(int $id): array {
     return todos("SELECT u.id, u.usuario, u.correo, u.nombre, u.cargo FROM usuarios u JOIN usuario_procesos up ON up.usuario_id = u.id
       WHERE up.proceso_id = ? AND u.rol = 'lider_proceso' AND u.activo = 1 ORDER BY u.nombre", $id);
 }
-const SOLO_ADMIN_PROCESOS = 'Solo el administrador crea procesos y asigna a sus líderes';
+const SOLO_ADMIN_PROCESOS = 'Solo el administrador asigna a los líderes de los procesos';
 
 $R->get('/api/procesos-lideres', function (Peticion $req) {
-    solo_admin($req->u, SOLO_ADMIN_PROCESOS);
+    exigir_privilegio($req->u, 'gestionar_procesos');
     return array_map(fn($p) => $p + ['lideres' => lideres_de($p['id'])],
-        todos("SELECT id, nombre, sigla, codigo, categoria, tipo, padre_id, version FROM procesos WHERE empresa_id = ?
+        todos("SELECT id, nombre, sigla, codigo, categoria, tipo, padre_id, version, publicado FROM procesos WHERE empresa_id = ?
           ORDER BY CASE categoria WHEN 'Estratégico' THEN 0 WHEN 'Misional' THEN 1 ELSE 2 END, orden, nombre", $req->u['empresa_id']));
 });
 
 $R->post('/api/procesos', function (Peticion $req) {
-    solo_admin($req->u, SOLO_ADMIN_PROCESOS);
+    exigir_privilegio($req->u, 'gestionar_procesos');
     $b = $req->body; $nombre = txt($b['nombre'] ?? '');
     if ($nombre === '') falla(400, 'El nombre es obligatorio');
     $padre = !empty($b['padre_id']) ? cargar_proceso($b['padre_id'], $req->u) : null;
@@ -121,8 +121,9 @@ $R->post('/api/procesos', function (Peticion $req) {
     if (uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND padre_id <=> ? AND lower(nombre) = lower(?)', $req->u['empresa_id'], $padre['id'] ?? null, $nombre)) falla(400, 'Ya existe un proceso con ese nombre en ese lugar');
     return transaccion(function () use ($req, $b, $nombre, $padre, $categoria, $tipo, $codigo) {
         $orden = (int)uno('SELECT COALESCE(MAX(orden), 0) + 1 n FROM procesos WHERE empresa_id = ? AND padre_id <=> ?', $req->u['empresa_id'], $padre['id'] ?? null)['n'];
-        $id = ejecutar('INSERT INTO procesos (empresa_id, nombre, sigla, categoria, orden, padre_id, tipo, codigo, version, fecha, modificado) VALUES (?,?,?,?,?,?,?,?,1,?,?)',
-            $req->u['empresa_id'], $nombre, mb_strtoupper(txt($b['sigla'] ?? '')) ?: sigla_de($nombre), $categoria, $orden, $padre['id'] ?? null, $tipo, $codigo, substr(ahora(), 0, 10), ahora());
+        // un proceso que cuelga de uno no publicado nace no publicado (no puede estar a la vista algo cuyo proceso está retirado)
+        $id = ejecutar('INSERT INTO procesos (empresa_id, nombre, sigla, categoria, orden, padre_id, tipo, codigo, version, fecha, modificado, publicado) VALUES (?,?,?,?,?,?,?,?,1,?,?,?)',
+            $req->u['empresa_id'], $nombre, mb_strtoupper(txt($b['sigla'] ?? '')) ?: sigla_de($nombre), $categoria, $orden, $padre['id'] ?? null, $tipo, $codigo, substr(ahora(), 0, 10), ahora(), $padre && !(int)$padre['publicado'] ? 0 : 1);
         ejecutar('INSERT INTO proceso_versiones (proceso_id, version, fecha, usuario_id, comentario, contenido) VALUES (?,?,?,?,?,?)',
             $id, 1, ahora(), $req->u['id'], 'Creación del proceso', json_texto(contenido_proceso(cargar_proceso($id, $req->u))));
         return ['id' => $id];
@@ -135,11 +136,13 @@ function descendientes_de(int $id): array {
       UNION SELECT p.id FROM procesos p JOIN arbol a ON p.padre_id = a.id) SELECT id FROM arbol', $id));
 }
 
-// Cambiar la identidad de un proceso desde Administración: nombre, código, tipo, categoría y de quién cuelga (solo el administrador).
+// Cambiar la identidad de un proceso desde Administración: nombre, código, tipo, categoría, de quién cuelga y si está publicado (solo el administrador).
 // Un proceso principal lleva su propia categoría; un subproceso o un procedimiento hereda la de su padre, y un cambio de categoría baja a todos sus descendientes.
+// Publicación: «No publicado» retira el proceso (y todo lo que cuelga de él) del mapa, del árbol y de las listas para elegir, sin borrar nada; lo ya registrado
+// (documentos, riesgos, indicadores…) se conserva. Un proceso no puede estar publicado si el suyo no lo está; al volver a publicar se pueden publicar también sus subprocesos.
 // Cada cambio real genera una versión nueva en el historial del proceso.
 $R->put('/api/procesos/:id/identidad', function (Peticion $req) {
-    solo_admin($req->u, SOLO_ADMIN_PROCESOS);
+    exigir_privilegio($req->u, 'gestionar_procesos');
     $p = cargar_proceso($req->p('id'), $req->u); $b = $req->body; $e = $req->u['empresa_id'];
     $nombre = txt($b['nombre'] ?? '');
     if ($nombre === '') falla(400, 'El nombre es obligatorio');
@@ -160,20 +163,29 @@ $R->put('/api/procesos/:id/identidad', function (Peticion $req) {
     if (uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND padre_id <=> ? AND lower(nombre) = lower(?) AND id <> ?', $e, $padre['id'] ?? null, $nombre, $p['id'])) falla(400, 'Ya existe un proceso con ese nombre en ese lugar');
 
     $padreAntes = $p['padre_id'] ? (int)$p['padre_id'] : null; $padreAhora = $padre ? (int)$padre['id'] : null;
+    $publicado = !esta($b, 'publicado') ? (int)$p['publicado'] : (($b['publicado'] === true || $b['publicado'] === 1 || $b['publicado'] === '1') ? 1 : 0);
+    if ($publicado && $padre && !(int)$padre['publicado']) {
+        if (!(int)$p['publicado']) falla(400, "No se puede publicar «{$p['nombre']}» mientras «{$padre['nombre']}», de la que cuelga, no esté publicado: publica primero ese proceso");
+        $publicado = 0; // un proceso publicado que pasa a colgar de uno no publicado queda no publicado
+    }
+    $conHijos = $req->b('con_subprocesos') !== false;   // al publicar, también sus subprocesos (por defecto sí)
     $cambios = [];
     if ($nombre !== $p['nombre']) $cambios[] = "nombre «{$p['nombre']}» → «{$nombre}»";
     if ($codigo !== ($p['codigo'] ?: null)) $cambios[] = 'código ' . ($p['codigo'] ?: '(sin código)') . ' → ' . ($codigo ?: '(sin código)');
     if ($tipo !== $p['tipo']) $cambios[] = "tipo {$p['tipo']} → $tipo";
     if ($padreAhora !== $padreAntes) $cambios[] = $padre ? "pasa a pertenecer a «{$padre['nombre']}»" : 'pasa a ser un proceso principal';
     if ($categoria !== $p['categoria']) $cambios[] = "categoría {$p['categoria']} → $categoria";
+    if ($publicado !== (int)$p['publicado']) $cambios[] = ($publicado ? 'se publica' : 'deja de estar publicado') . ($desc && ($publicado ? $conHijos : true) ? ' (con sus ' . count($desc) . ' subprocesos)' : '');
     if (!$cambios) return ['ok' => true, 'version' => (int)$p['version'], 'sin_cambios' => true];
 
-    return transaccion(function () use ($p, $nombre, $codigo, $tipo, $padre, $padreAhora, $padreAntes, $categoria, $desc, $cambios, $req, $e) {
+    return transaccion(function () use ($p, $nombre, $codigo, $tipo, $padre, $padreAhora, $padreAntes, $categoria, $desc, $cambios, $req, $e, $publicado, $conHijos) {
         $version = (int)$p['version'] + 1;
         $orden = $padreAhora === $padreAntes ? $p['orden'] : (int)uno('SELECT COALESCE(MAX(orden), 0) + 1 n FROM procesos WHERE empresa_id = ? AND padre_id <=> ?', $e, $padreAhora)['n']; // al cambiar de lugar va al final
-        ejecutar('UPDATE procesos SET nombre = ?, codigo = ?, tipo = ?, padre_id = ?, categoria = ?, orden = ?, version = ?, modificado = ? WHERE id = ?',
-            $nombre, $codigo, $tipo, $padreAhora, $categoria, $orden, $version, ahora(), $p['id']);
+        ejecutar('UPDATE procesos SET nombre = ?, codigo = ?, tipo = ?, padre_id = ?, categoria = ?, orden = ?, version = ?, modificado = ?, publicado = ? WHERE id = ?',
+            $nombre, $codigo, $tipo, $padreAhora, $categoria, $orden, $version, ahora(), $publicado, $p['id']);
         if ($categoria !== $p['categoria'] && $desc) ejecutar('UPDATE procesos SET categoria = ? WHERE id IN (' . marcas($desc) . ')', $categoria, ...$desc);
+        // retirar un proceso retira todo lo que cuelga de él; publicarlo vuelve a publicar sus subprocesos solo si se pide
+        if ($desc && $publicado !== (int)$p['publicado'] && ($publicado === 0 || $conHijos)) ejecutar('UPDATE procesos SET publicado = ? WHERE id IN (' . marcas($desc) . ')', $publicado, ...$desc);
         ejecutar('INSERT INTO proceso_versiones (proceso_id, version, fecha, usuario_id, comentario, contenido) VALUES (?,?,?,?,?,?)',
             $p['id'], $version, ahora(), $req->u['id'], 'Cambio de identidad: ' . implode('; ', $cambios), json_texto(contenido_proceso(cargar_proceso($p['id'], $req->u))));
         return ['ok' => true, 'version' => $version];

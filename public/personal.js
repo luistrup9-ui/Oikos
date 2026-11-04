@@ -125,21 +125,43 @@
     await pintar();
   }
 
+  // «Mi SGI»: los mecanismos de integración de la persona (coordina o es integrante), con su última y su próxima sesión
+  async function misMecanismos(contenedor) {
+    let lista = [], q = '';
+    contenedor.innerHTML = `<div class="encabezado"><h3>Mecanismos de integración</h3>
+      <input type="search" class="buscar-tabla" placeholder="Buscar mecanismo…" aria-label="Buscar mecanismo" autocomplete="off"></div><div id="tablaMec"><p class="sub">Cargando…</p></div>`;
+    const hoyIso = aFecha(new Date()), destino = $('#tablaMec', contenedor);
+    const dibujar = () => {
+      const filas = lista.filter(m => coincide(`${m.nombre} ${m.tipo}`, q));
+      destino.innerHTML = !lista.length ? '<p class="vacio">Todavía no participas en ningún mecanismo de integración.</p>'
+        : filas.length ? `<div class="tabla-wrap"><table><thead><tr><th>ID</th><th>Nombre</th><th>Última sesión</th><th>Próxima sesión</th></tr></thead><tbody>
+          ${filas.map(m => `<tr class="click" data-ir="#/mecanismo/${m.id}"><td>${m.id}</td><td>${esc(m.nombre)}</td><td>${m.ultima ? esc(m.ultima) : '<span class="gris">—</span>'}</td>
+            <td>${m.proxima ? esc(m.proxima) + (m.proxima === hoyIso ? ' <small class="gris">(hoy)</small>' : '') : '<span class="gris">—</span>'}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="vacio">Ningún mecanismo coincide con «${esc(q)}».</p>`;
+    };
+    $('input', contenedor).oninput = e => { q = e.target.value; dibujar(); };
+    try { lista = await api('/mis-mecanismos'); dibujar(); }
+    catch (e) { destino.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  }
+
   rutas.inicio = async function () {
     await previa(); // arma "Mi plan de trabajo" en #vista; se mueve tal cual a la pestaña "Mi SGI"
     const sgi = document.createElement('div'); sgi.className = 'pers-panel'; sgi.dataset.panel = 'sgi'; sgi.hidden = true;
     sgi.append(...vista.childNodes);
     const iniciales = (yo.nombre || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
-    const proceso = cat.procesos.find(p => p.id === yo.proceso_id)?.nombre;
+    const proceso = yo.dependencia || cat.procesos.find(p => p.id === yo.proceso_id)?.nombre; // la dependencia es el área de su cargo
     vista.innerHTML = `<header class="pers-cab">
         <div class="pers-avatar" aria-hidden="true">${esc(iniciales)}</div>
         <div class="pers-datos"><h2>${esc(yo.nombre)}</h2>
           <p class="pers-cargo"><i class="ic ic-usuario"></i><span>${esc(yo.cargo || ROLES[yo.rol] || '')}</span>${proceso ? `<em>/ ${esc(proceso)}</em>` : ''}</p>
           <p class="pers-sub">${esc(ROLES[yo.rol] || '')}${yo.empresa ? ' en ' + esc(yo.empresa) : ''}${yo.correo ? ` · ${esc(yo.correo)}` : ''}</p></div>
-        <button class="btn" id="cambiarClave" title="Cambiar la clave con la que ingresas"><i class="ic ic-llave"></i> Cambiar mi clave</button></header>
+        <div class="acciones"><button class="btn" data-ir="#/cuenta" title="Mis avisos, mi firma y mis números de contacto"><i class="ic ic-engrane"></i> Mi cuenta</button>
+          <button class="btn" id="cambiarClave" title="Cambiar la clave con la que ingresas"><i class="ic ic-llave"></i> Cambiar mi clave</button></div></header>
       <div class="tabs" role="tablist"><button class="activo" role="tab" data-pestana="actividades">Actividades</button><button role="tab" data-pestana="sgi">Mi SGI</button></div>
       <div class="pers-panel" data-panel="actividades"></div>`;
     vista.append(sgi);
+    const mecanismos = document.createElement('section'); mecanismos.className = 'tarjeta'; mecanismos.id = 'misMecanismos'; sgi.prepend(mecanismos);
+    misMecanismos(mecanismos);
     $('#cambiarClave').onclick = () => pedirCambioClave(false);
     $('.tabs', vista).addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;

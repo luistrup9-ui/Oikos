@@ -6,9 +6,15 @@ let yo = null, cat = null;
 const ACEPTA = '.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.rtf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.zip,.rar,.7z,.dwg,.dxf,.msg,.eml,.mp4,.mp3,.vsd,.vsdx';
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Búsqueda en las listas: ¿el texto contiene lo escrito? (sin distinguir mayúsculas ni tildes)
+const sinAcentos = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const coincide = (texto, q) => sinAcentos(texto).includes(sinAcentos(q).trim());
 const fecha = v => v ? esc(String(v).slice(0, 16)) : '—';
 const estado = (id, nombre) => `<span class="estado ${esc(id)}" title="${esc(nombre)}">${esc(cat?.estados.find(e => e.id === id)?.nombre.split(' (')[0] || id)}</span>`;
 const esCalidad = () => yo && (yo.rol === 'admin' || yo.rol === 'lider_calidad');
+// Privilegios (suman a los roles): el administrador los tiene todos. Ver php/modulos/privilegios.php
+const puede = clave => !!yo && (yo.rol === 'admin' || (yo.privilegios || []).includes(clave));
+const puedeAdministrar = () => esCalidad() || !!yo?.administra_grupos || ['gestionar_estructura', 'gestionar_cargos', 'gestionar_grupos', 'gestionar_procesos'].some(puede);
 // Las claves internas de los roles no cambian (la base las exige); estos son los nombres que ve la gente
 const ROLES = { admin: 'Administrador', lider_calidad: 'Gestor de Calidad', lider_proceso: 'Líder', consulta: 'Colaborador' };
 
@@ -44,6 +50,10 @@ function aviso(msg, mal = false) {
   clearTimeout(aviso.t); aviso.t = setTimeout(() => a.hidden = true, 3500);
 }
 const intentar = fn => async (...a) => { try { await fn(...a); } catch (e) { aviso(e.message, true); } };
+// Procesos «No publicados» (y lo que cuelga de ellos): se retiran del mapa, del árbol y de las listas para elegir, pero lo ya registrado se conserva.
+// En un formulario de edición se agrega el proceso que el registro ya tenía, para no cambiárselo sin querer al guardar.
+const procesosVisibles = () => cat.procesos.filter(p => p.publicado !== 0);
+const procesosParaElegir = (actual, base = cat.procesos) => base.filter(p => p.publicado !== 0 || p.id === Number(actual));
 const opciones = (lista, sel, vacio) => (vacio ? `<option value="">${vacio}</option>` : '') +
   lista.map(x => `<option value="${esc(x.id)}" ${String(sel) === String(x.id) ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
 const valoresForm = form => {
@@ -112,6 +122,7 @@ $('#formRestablecer').addEventListener('submit', async e => {
 });
 $('#salir').onclick = async e => { e.preventDefault(); await api('/logout', { method: 'POST' }); mostrarLogin(); };
 
+const RUTA_DE_INICIO = { personal: '#/inicio', mapa: '#/mapa', tablero: '#/tablero' }; // «bienvenida» (la página de inicio) es la de siempre
 async function iniciar() {
   if (tokenRestablecer()) return; // se llegó desde el enlace del correo: primero se elige la clave nueva
   try { yo = await api('/yo'); } catch { return; }
@@ -124,6 +135,8 @@ async function iniciar() {
   document.querySelectorAll('[data-no]').forEach(el => el.hidden = el.dataset.no.split(',').includes(yo.rol));
   $('#login').hidden = true; $('#app').hidden = false;
   document.dispatchEvent(new Event('sgi:sesion')); // armazon.js llena el panel lateral
+  // La página con la que abre cada persona (la elige en Cuenta): solo al entrar, cuando no pidió otra, y sin tocar el historial del navegador
+  if (RUTA_DE_INICIO[yo.pagina_inicio] && ['', '#', '#/', '#/bienvenida'].includes(location.hash)) history.replaceState(null, '', RUTA_DE_INICIO[yo.pagina_inicio]);
   enrutar();
   if (yo.debe_cambiar && window.pedirCambioClave) pedirCambioClave(true);
 }
@@ -225,7 +238,7 @@ const camposDoc = (d = {}) => `<div class="form">
   <label class="ancho">Nombre<input name="nombre" required value="${esc(d.nombre)}"></label>
   <label>Tipo<select name="tipo_id" required>${opciones(cat.tipos, d.tipo_id)}</select></label>
   <label>Clase<select name="clase_id" required ${d.id ? 'disabled' : ''}>${opciones(cat.clases, d.clase_id)}</select></label>
-  <label>Proceso<select name="proceso_id" required ${d.id ? 'disabled' : ''}>${opciones(cat.procesos, d.proceso_id ?? yo.proceso_id)}</select></label>
+  <label>Proceso<select name="proceso_id" required ${d.id ? 'disabled' : ''}>${opciones(procesosParaElegir(d.proceso_id), d.proceso_id ?? yo.proceso_id)}</select></label>
   <label>Origen<select name="origen"><option ${d.origen === 'Interno' ? 'selected' : ''}>Interno</option>
     <option ${d.origen === 'Externo' ? 'selected' : ''}>Externo</option></select></label>
   <label>Responsable<select name="responsable_id">${opciones(cat.usuarios.filter(u => u.rol !== 'consulta'), d.responsable_id ?? yo.id)}</select></label>
@@ -320,7 +333,7 @@ async function nuevaSolicitud(tipo = 'Creación', doc = null) {
     : `<div class="form">
         <label>Tipo de documento<select name="tipo_id" required>${opciones(cat.tipos)}</select></label>
         <label>Clase<select name="clase_id" required>${opciones(cat.clases)}</select></label>
-        <label class="ancho">Proceso<select name="proceso_id" required>${opciones(cat.procesos, yo.proceso_id)}</select></label>
+        <label class="ancho">Proceso<select name="proceso_id" required>${opciones(procesosVisibles(), yo.proceso_id)}</select></label>
         <label class="ancho">Nombre<input name="nombre" required></label></div>`;
   const v = await modal(`Solicitud de ${tipo.toLowerCase()}`, `${cuerpo}
     <input type="hidden" name="tipo_solicitud" value="${tipo}">
@@ -377,7 +390,7 @@ async function registros() {
   let lista = [];
   const formReg = (r = {}) => `<div class="form">
     <label class="ancho">Nombre del registro<input name="nombre" required value="${esc(r.nombre)}"></label>
-    <label>Proceso<select name="proceso_id">${opciones(cat.procesos, r.proceso_id)}</select></label>
+    <label>Proceso<select name="proceso_id">${opciones(procesosParaElegir(r.proceso_id), r.proceso_id)}</select></label>
     <label>Formato asociado (id de documento)<input name="documento_id" type="number" value="${esc(r.documento_id)}"></label>
     <label>Cargo responsable<input name="responsable_cargo" value="${esc(r.responsable_cargo)}"></label>
     <label>Área<input name="responsable_area" value="${esc(r.responsable_area)}"></label>

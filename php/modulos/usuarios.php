@@ -74,7 +74,10 @@ $R->get('/api/usuarios', function (Peticion $req) {
     $marcados = [];
     foreach (todos('SELECT up.usuario_id, up.proceso_id FROM usuario_procesos up JOIN usuarios u ON u.id = up.usuario_id WHERE u.empresa_id = ? ORDER BY up.proceso_id', $req->u['empresa_id']) as $x)
         $marcados[$x['usuario_id']][] = $x['proceso_id'];
-    return array_map(fn($u) => $u + ['procesos' => $u['rol'] === 'lider_proceso' ? ($marcados[$u['id']] ?? []) : []],
+    $grupos = [];
+    foreach (todos('SELECT m.usuario_id, g.id, g.nombre FROM grupo_miembros m JOIN grupos g ON g.id = m.grupo_id WHERE g.empresa_id = ? ORDER BY g.nombre', $req->u['empresa_id']) as $x)
+        $grupos[$x['usuario_id']][] = ['id' => $x['id'], 'nombre' => $x['nombre']];
+    return array_map(fn($u) => $u + ['procesos' => $u['rol'] === 'lider_proceso' ? ($marcados[$u['id']] ?? []) : [], 'grupos' => $grupos[$u['id']] ?? []],
         todos('SELECT u.id, u.usuario, u.correo, u.nombre, u.cargo, u.cargo_id, u.rol, u.proceso_id, u.activo, u.debe_cambiar, u.reinicio_solicitado, p.nombre proceso
           FROM usuarios u LEFT JOIN procesos p ON p.id = u.proceso_id WHERE u.empresa_id = ? ORDER BY u.activo DESC, u.nombre', $req->u['empresa_id']));
 });
@@ -96,6 +99,7 @@ $R->post('/api/usuarios', function (Peticion $req) {
         $id = ejecutar('INSERT INTO usuarios (empresa_id, usuario, correo, nombre, cargo, cargo_id, rol, proceso_id, clave, activo, debe_cambiar)
           VALUES (?,?,?,?,?,?,?,?,?,1,1)', $req->u['empresa_id'], $usuario, $correo, txt($b['nombre']), $cg['cargo'], $cg['cargo_id'], $b['rol'], ($b['proceso_id'] ?? null) ?: null, hash_clave($clave));
         guardar_procesos($id, $b['procesos']);
+        unir_a_grupos_por_defecto((int)$id, (int)$req->u['empresa_id']);
         return $id;
     });
     return ['id' => $id, 'usuario' => $usuario, 'clave_temporal' => !empty($b['clave']) ? null : $clave];

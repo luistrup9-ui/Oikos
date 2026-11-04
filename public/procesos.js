@@ -1,7 +1,7 @@
 // Ficha de caracterización de procesos y subprocesos (como la de Almera)
 const CICLO_NOMBRE = { P: 'Planear', H: 'Hacer', V: 'Verificar', A: 'Actuar' };
-const raices = () => cat.procesos.filter(p => !p.padre_id);
-const hijosDe = id => cat.procesos.filter(p => p.padre_id === id);
+const raices = () => procesosVisibles().filter(p => !p.padre_id);
+const hijosDe = id => procesosVisibles().filter(p => p.padre_id === id);
 
 rutas.proceso = async function (id) {
   let t = parametro('t') || 'general';

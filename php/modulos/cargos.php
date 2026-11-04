@@ -16,10 +16,22 @@ $R->get('/api/cargos', function (Peticion $req) {
         array_filter($personas, fn($p) => $p['cargo_id'] === $c['id'] && $p['activo'])))], $cargos);
 });
 
+// El área del cargo: la que se elige (area_id) o, si se manda su sigla y nombre, la que ya exista con esa sigla (o se crea; eso exige poder gestionar la estructura)
+function resolver_area(array $b, array $u): array {
+    if (!empty($b['area_id'])) return uno('SELECT * FROM areas WHERE id = ? AND empresa_id = ?', $b['area_id'], $u['empresa_id']) ?? falla(400, 'El área no existe');
+    $sigla = strtoupper(txt($b['area_sigla'] ?? '')); $nombre = txt($b['area'] ?? '');
+    if (!preg_match('/^[A-Z]{2,6}$/', $sigla)) falla(400, 'La sigla del área va de 2 a 6 letras (ej. GPR)');
+    $a = uno('SELECT * FROM areas WHERE empresa_id = ? AND sigla = ?', $u['empresa_id'], $sigla);
+    if ($a) return $a;
+    if ($nombre === '') falla(400, 'El nombre del área es obligatorio');
+    exigir_privilegio($u, 'gestionar_estructura', 'Esa área no existe y crearla exige el privilegio «Gestionar la estructura organizacional»');
+    $orden = (int)uno('SELECT COALESCE(MAX(orden), 0) + 1 n FROM areas WHERE empresa_id = ? AND padre_id IS NULL', $u['empresa_id'])['n'];
+    $id = ejecutar('INSERT INTO areas (empresa_id, sigla, nombre, orden) VALUES (?,?,?,?)', $u['empresa_id'], $sigla, $nombre, $orden);
+    return uno('SELECT * FROM areas WHERE id = ?', $id);
+}
 function validar_cargo(array $b, array $u, int $id = 0): array {
-    $area_sigla = strtoupper(txt($b['area_sigla'] ?? '')); $area = txt($b['area'] ?? ''); $nombre = txt($b['nombre'] ?? '');
-    if (!preg_match('/^[A-Z]{2,6}$/', $area_sigla)) falla(400, 'La sigla del área va de 2 a 6 letras (ej. GPR)');
-    if ($area === '') falla(400, 'El nombre del área es obligatorio');
+    if ($id && empty($b['area_id']) && empty($b['area_sigla'])) $b['area_id'] = uno('SELECT area_id FROM cargos WHERE id = ?', $id)['area_id'] ?? null;   // al editar sin decir el área, se queda en la que está
+    $area = resolver_area($b, $u); $area_id = (int)$area['id']; $area_sigla = $area['sigla']; $area = $area['nombre']; $nombre = txt($b['nombre'] ?? '');
     if ($nombre === '') falla(400, 'El nombre del cargo es obligatorio');
     $numero = empty($b['numero']) ? (int)uno('SELECT COALESCE(MAX(numero), 0) + 1 n FROM cargos WHERE empresa_id = ?', $u['empresa_id'])['n'] : $b['numero'];
     if (!is_numeric($numero) || (int)$numero != $numero || $numero < 1 || $numero > 999) falla(400, 'El número del cargo va de 1 a 999');
@@ -37,22 +49,22 @@ function validar_cargo(array $b, array $u, int $id = 0): array {
     }
     $a = $b['activo'] ?? 1;
     $activo = ($a === 0 || $a === '0' || $a === false) ? 0 : 1;
-    return compact('area_sigla', 'area', 'numero', 'nombre', 'jefe_id', 'activo');
+    return compact('area_id', 'area_sigla', 'area', 'numero', 'nombre', 'jefe_id', 'activo');
 }
 
 $R->post('/api/cargos', function (Peticion $req) {
-    solo_admin($req->u, 'Solo el administrador gestiona los cargos');
+    exigir_privilegio($req->u, 'gestionar_cargos');
     $d = validar_cargo($req->body, $req->u);
-    $id = ejecutar('INSERT INTO cargos (empresa_id, area_sigla, area, numero, nombre, jefe_id, activo) VALUES (?,?,?,?,?,?,?)',
-        $req->u['empresa_id'], $d['area_sigla'], $d['area'], $d['numero'], $d['nombre'], $d['jefe_id'], $d['activo']);
+    $id = ejecutar('INSERT INTO cargos (empresa_id, area_id, area_sigla, area, numero, nombre, jefe_id, activo) VALUES (?,?,?,?,?,?,?,?)',
+        $req->u['empresa_id'], $d['area_id'], $d['area_sigla'], $d['area'], $d['numero'], $d['nombre'], $d['jefe_id'], $d['activo']);
     return ['id' => $id, 'codigo' => codigo_cargo($d)];
 });
 
 $R->put('/api/cargos/:id', function (Peticion $req) {
-    solo_admin($req->u, 'Solo el administrador gestiona los cargos');
+    exigir_privilegio($req->u, 'gestionar_cargos');
     $c = cargar_cargo($req->p('id'), $req->u); $d = validar_cargo($req->body, $req->u, $c['id']);
     transaccion(function () use ($c, $d) {
-        ejecutar('UPDATE cargos SET area_sigla = ?, area = ?, numero = ?, nombre = ?, jefe_id = ?, activo = ? WHERE id = ?', $d['area_sigla'], $d['area'], $d['numero'], $d['nombre'], $d['jefe_id'], $d['activo'], $c['id']);
+        ejecutar('UPDATE cargos SET area_id = ?, area_sigla = ?, area = ?, numero = ?, nombre = ?, jefe_id = ?, activo = ? WHERE id = ?', $d['area_id'], $d['area_sigla'], $d['area'], $d['numero'], $d['nombre'], $d['jefe_id'], $d['activo'], $c['id']);
         ejecutar('UPDATE usuarios SET cargo = ? WHERE cargo_id = ?', $d['nombre'], $c['id']); // el nombre del cargo se ve en el perfil de cada persona
     });
     return ['ok' => true, 'codigo' => codigo_cargo($d)];
@@ -60,7 +72,7 @@ $R->put('/api/cargos/:id', function (Peticion $req) {
 
 // Quiénes ocupan el cargo: se marcan las personas; si alguna tenía otro cargo, pasa a este
 $R->put('/api/cargos/:id/personas', function (Peticion $req) {
-    solo_admin($req->u, 'Solo el administrador gestiona los cargos');
+    exigir_privilegio($req->u, 'gestionar_cargos');
     $c = cargar_cargo($req->p('id'), $req->u);
     $ids = lista_ids($req->b('usuarios'));
     foreach ($ids as $id) if (!uno('SELECT 1 FROM usuarios WHERE id = ? AND empresa_id = ?', $id, $req->u['empresa_id'])) falla(400, 'Usuario inválido');
