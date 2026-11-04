@@ -104,7 +104,7 @@ const SOLO_ADMIN_PROCESOS = 'Solo el administrador crea procesos y asigna a sus 
 $R->get('/api/procesos-lideres', function (Peticion $req) {
     solo_admin($req->u, SOLO_ADMIN_PROCESOS);
     return array_map(fn($p) => $p + ['lideres' => lideres_de($p['id'])],
-        todos("SELECT id, nombre, sigla, codigo, categoria, tipo, padre_id FROM procesos WHERE empresa_id = ?
+        todos("SELECT id, nombre, sigla, codigo, categoria, tipo, padre_id, version FROM procesos WHERE empresa_id = ?
           ORDER BY CASE categoria WHEN 'Estratégico' THEN 0 WHEN 'Misional' THEN 1 ELSE 2 END, orden, nombre", $req->u['empresa_id']));
 });
 
@@ -126,6 +126,57 @@ $R->post('/api/procesos', function (Peticion $req) {
         ejecutar('INSERT INTO proceso_versiones (proceso_id, version, fecha, usuario_id, comentario, contenido) VALUES (?,?,?,?,?,?)',
             $id, 1, ahora(), $req->u['id'], 'Creación del proceso', json_texto(contenido_proceso(cargar_proceso($id, $req->u))));
         return ['id' => $id];
+    });
+});
+
+// Todos los procesos que cuelgan de este, a cualquier profundidad
+function descendientes_de(int $id): array {
+    return array_map(fn($p) => (int)$p['id'], todos('WITH RECURSIVE arbol(id) AS (SELECT id FROM procesos WHERE padre_id = ?
+      UNION SELECT p.id FROM procesos p JOIN arbol a ON p.padre_id = a.id) SELECT id FROM arbol', $id));
+}
+
+// Cambiar la identidad de un proceso desde Administración: nombre, código, tipo, categoría y de quién cuelga (solo el administrador).
+// Un proceso principal lleva su propia categoría; un subproceso o un procedimiento hereda la de su padre, y un cambio de categoría baja a todos sus descendientes.
+// Cada cambio real genera una versión nueva en el historial del proceso.
+$R->put('/api/procesos/:id/identidad', function (Peticion $req) {
+    solo_admin($req->u, SOLO_ADMIN_PROCESOS);
+    $p = cargar_proceso($req->p('id'), $req->u); $b = $req->body; $e = $req->u['empresa_id'];
+    $nombre = txt($b['nombre'] ?? '');
+    if ($nombre === '') falla(400, 'El nombre es obligatorio');
+    $tipo = $b['tipo'] ?? $p['tipo'];
+    if (!in_array($tipo, TIPOS_PROCESO, true)) falla(400, 'Tipo no válido');
+    $desc = descendientes_de((int)$p['id']);
+    $padre = null;
+    if ($tipo !== 'Proceso') {
+        if (empty($b['padre_id'])) falla(400, 'Un subproceso o un procedimiento debe pertenecer a un proceso');
+        $padre = cargar_proceso($b['padre_id'], $req->u);
+        if ((int)$padre['id'] === (int)$p['id'] || in_array((int)$padre['id'], $desc, true)) falla(400, 'Un proceso no puede pertenecer a sí mismo ni a uno de sus subprocesos');
+    }
+    if ($tipo === 'Procedimiento' && $desc) falla(400, 'Un procedimiento no puede tener subprocesos y este tiene ' . count($desc));
+    $categoria = $padre ? $padre['categoria'] : ($b['categoria'] ?? $p['categoria']);
+    if (!in_array($categoria, CATEGORIAS, true)) falla(400, 'La categoría debe ser Estratégico, Misional o Apoyo');
+    $codigo = txt($b['codigo'] ?? '') ?: null;
+    if ($codigo && uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND codigo = ? AND id <> ?', $e, $codigo, $p['id'])) falla(400, "Ya existe un proceso con el código $codigo");
+    if (uno('SELECT 1 FROM procesos WHERE empresa_id = ? AND padre_id <=> ? AND lower(nombre) = lower(?) AND id <> ?', $e, $padre['id'] ?? null, $nombre, $p['id'])) falla(400, 'Ya existe un proceso con ese nombre en ese lugar');
+
+    $padreAntes = $p['padre_id'] ? (int)$p['padre_id'] : null; $padreAhora = $padre ? (int)$padre['id'] : null;
+    $cambios = [];
+    if ($nombre !== $p['nombre']) $cambios[] = "nombre «{$p['nombre']}» → «{$nombre}»";
+    if ($codigo !== ($p['codigo'] ?: null)) $cambios[] = 'código ' . ($p['codigo'] ?: '(sin código)') . ' → ' . ($codigo ?: '(sin código)');
+    if ($tipo !== $p['tipo']) $cambios[] = "tipo {$p['tipo']} → $tipo";
+    if ($padreAhora !== $padreAntes) $cambios[] = $padre ? "pasa a pertenecer a «{$padre['nombre']}»" : 'pasa a ser un proceso principal';
+    if ($categoria !== $p['categoria']) $cambios[] = "categoría {$p['categoria']} → $categoria";
+    if (!$cambios) return ['ok' => true, 'version' => (int)$p['version'], 'sin_cambios' => true];
+
+    return transaccion(function () use ($p, $nombre, $codigo, $tipo, $padre, $padreAhora, $padreAntes, $categoria, $desc, $cambios, $req, $e) {
+        $version = (int)$p['version'] + 1;
+        $orden = $padreAhora === $padreAntes ? $p['orden'] : (int)uno('SELECT COALESCE(MAX(orden), 0) + 1 n FROM procesos WHERE empresa_id = ? AND padre_id <=> ?', $e, $padreAhora)['n']; // al cambiar de lugar va al final
+        ejecutar('UPDATE procesos SET nombre = ?, codigo = ?, tipo = ?, padre_id = ?, categoria = ?, orden = ?, version = ?, modificado = ? WHERE id = ?',
+            $nombre, $codigo, $tipo, $padreAhora, $categoria, $orden, $version, ahora(), $p['id']);
+        if ($categoria !== $p['categoria'] && $desc) ejecutar('UPDATE procesos SET categoria = ? WHERE id IN (' . marcas($desc) . ')', $categoria, ...$desc);
+        ejecutar('INSERT INTO proceso_versiones (proceso_id, version, fecha, usuario_id, comentario, contenido) VALUES (?,?,?,?,?,?)',
+            $p['id'], $version, ahora(), $req->u['id'], 'Cambio de identidad: ' . implode('; ', $cambios), json_texto(contenido_proceso(cargar_proceso($p['id'], $req->u))));
+        return ['ok' => true, 'version' => $version];
     });
 });
 

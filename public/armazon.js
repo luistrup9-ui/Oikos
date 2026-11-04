@@ -167,16 +167,11 @@ rutas.bienvenida = async function () {
   const hasta = new Date(ahora); hasta.setDate(hasta.getDate() + 14);
   const ceros = (p, v) => p.catch(() => v);
 
-  // Módulos: del color de su familia en el mapa de procesos (estratégico, misional, apoyo)
+  // Accesos de la página de inicio: solo los tres que no están en el menú de arriba (los demás módulos se abren desde ese menú y desde el panel izquierdo).
+  // Del color de su familia en el mapa de procesos (estratégico, misional, apoyo)
   const modulos = [
     ['Mapa de procesos', '#/mapa', 'Estratégicos, misionales y de apoyo, y sus fichas.', 'mapa', 'estrategico'],
-    ['Cuadro de Mando', '#/tablero', 'Objetivos del plan estratégico e indicadores.', 'tablero', 'estrategico'],
-    ['Documentos', '#/documentos', 'Listado maestro, versiones y flujo de aprobación.', 'documento', 'misional'],
-    ['Mecanismos de integración', '#/mecanismos', 'Comités, reuniones, actas y compromisos.', 'gente', 'misional'],
     ['Mi página', '#/inicio', 'Mis actividades, mi calendario y mi clave.', 'usuario', 'misional'],
-    ['Riesgos y controles', '#/riesgos', 'Matriz de riesgos y sus controles.', 'riesgo', 'apoyo'],
-    ['Evaluaciones', '#/auditorias', 'Auditorías, hallazgos y acciones de mejora.', 'evaluacion', 'apoyo'],
-    ['Glosario', '#/glosario', 'Los términos que usamos, bien definidos.', 'glosario', 'apoyo'],
     ...(esCalidad() ? [['Administración', yo.rol === 'admin' ? '#/admin?v=usuarios' : '#/admin?v=importar', 'Usuarios, cargos, procesos y copias de seguridad.', 'engrane', 'estrategico']] : []),
   ];
   vista.innerHTML = `<div class="inicio">

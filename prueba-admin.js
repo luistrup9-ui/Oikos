@@ -307,6 +307,65 @@ const PRUEBA = { admin: ['admin@oikos.test', 'admin123'], calidad: ['gestor@oiko
   r = await llamar('calidad', '/importar/documentos/plantilla');
   esperar('Descarga la plantilla CSV', r.texto?.includes('"codigo";"nombre";"tipo"'), r);
 
+  // ---- Editar la identidad de un proceso: nombre, código, tipo, categoría y de quién cuelga (PUT /procesos/:id/identidad) ----
+  const de = async id => (await llamar('admin', '/procesos-lideres')).find(p => p.id === id);
+  const idPA = (await llamar('admin', '/procesos', { nombre: 'Proceso para editar', categoria: 'Apoyo', codigo: 'ES-EDT-DAR-01' })).id;
+  const idSB = (await llamar('admin', '/procesos', { nombre: 'Subproceso hijo', padre_id: idPA, tipo: 'Subproceso' })).id;
+  const idPC = (await llamar('admin', '/procesos', { nombre: 'Procedimiento nieto', padre_id: idSB, tipo: 'Procedimiento' })).id;
+  const idOtro = (await llamar('admin', '/procesos', { nombre: 'Otro proceso principal', categoria: 'Misional' })).id;
+  const ident = (id, cuerpo) => llamar('admin', `/procesos/${id}/identidad`, cuerpo, 'PUT');
+  r = await llamar('calidad', `/procesos/${idPA}/identidad`, { nombre: 'x', tipo: 'Proceso', categoria: 'Apoyo' }, 'PUT');
+  esperar('Solo el administrador cambia la identidad de un proceso (Calidad no)', r.status === 403, r);
+  r = await llamar('produccion', `/procesos/${idPA}/identidad`, { nombre: 'x', tipo: 'Proceso', categoria: 'Apoyo' }, 'PUT');
+  esperar('Y un Líder tampoco', r.status === 403, r);
+  r = await ident(idPA, { nombre: 'Proceso editado', codigo: 'ES-EDT-DAR-02', tipo: 'Proceso', categoria: 'Apoyo' });
+  esperar('Cambiar nombre y código genera la versión 2', r.ok && r.version === 2 && !r.sin_cambios, r);
+  let h = await llamar('admin', `/procesos/${idPA}/historial`);
+  esperar('El historial dice qué cambió', h[0].version === 2 && /nombre «Proceso para editar» → «Proceso editado»/.test(h[0].comentario) && /código ES-EDT-DAR-01 → ES-EDT-DAR-02/.test(h[0].comentario), h[0]);
+  esperar('La ficha y el catálogo ya traen el nombre nuevo', (await llamar('admin', `/procesos/${idPA}`)).nombre === 'Proceso editado' && (await llamar('admin', '/catalogos')).procesos.find(p => p.id === idPA).nombre === 'Proceso editado', null);
+  r = await ident(idPA, { nombre: 'Proceso editado', codigo: 'ES-EDT-DAR-02', tipo: 'Proceso', categoria: 'Apoyo' });
+  h = await llamar('admin', `/procesos/${idPA}/historial`);
+  esperar('Guardar sin cambiar nada no crea versión', r.ok && r.sin_cambios && r.version === 2 && h.length === 2, [r, h.length]);
+  r = await ident(idPA, { nombre: 'Proceso editado', codigo: '', tipo: 'Proceso', categoria: 'Apoyo' });
+  esperar('Dejar el código vacío lo quita', r.ok && (await de(idPA)).codigo === null, r);
+  r = await ident(idPA, { nombre: 'Proceso editado', codigo: 'ES-EDT-DAR-02', tipo: 'Proceso', categoria: 'Misional' });
+  const hijosCat = async () => [(await de(idPA)).categoria, (await de(idSB)).categoria, (await de(idPC)).categoria];
+  esperar('Cambiar la categoría de un proceso la baja a sus subprocesos y procedimientos', r.ok && (await hijosCat()).every(c => c === 'Misional'), await hijosCat());
+
+  r = await ident(idPA, { nombre: 'Proceso editado', tipo: 'Subproceso', padre_id: idPC });
+  esperar('Un proceso no puede pasar a colgar de uno de sus propios subprocesos', r.status === 400 && /sí mismo ni a uno de sus subprocesos/.test(r.error), r);
+  r = await ident(idPA, { nombre: 'Proceso editado', tipo: 'Subproceso', padre_id: idPA });
+  esperar('Ni de sí mismo', r.status === 400, r);
+  r = await ident(idSB, { nombre: 'Subproceso hijo', tipo: 'Procedimiento', padre_id: idPA });
+  esperar('Un proceso con subprocesos no puede ser procedimiento', r.status === 400 && /no puede tener subprocesos/.test(r.error), r);
+  r = await ident(idSB, { nombre: 'Subproceso hijo', tipo: 'Subproceso' });
+  esperar('Un subproceso necesita decir de qué proceso cuelga', r.status === 400 && /debe pertenecer a un proceso/.test(r.error), r);
+  esperar('Nombre vacío, tipo inválido y categoría inválida se rechazan', (await ident(idSB, { nombre: ' ', tipo: 'Subproceso', padre_id: idPA })).status === 400
+    && (await ident(idSB, { nombre: 'Subproceso hijo', tipo: 'Cosa', padre_id: idPA })).status === 400 && (await ident(idPA, { nombre: 'Proceso editado', tipo: 'Proceso', categoria: 'Otra' })).status === 400, null);
+  r = await ident(idPA, { nombre: 'Otro proceso principal', tipo: 'Proceso', categoria: 'Misional' });
+  esperar('No se repite un nombre en el mismo lugar (sin importar mayúsculas)', r.status === 400 && /nombre en ese lugar/.test(r.error), r);
+  r = await ident(idOtro, { nombre: 'Otro proceso principal', codigo: 'ES-EDT-DAR-02', tipo: 'Proceso', categoria: 'Misional' });
+  esperar('Ni un código que ya tiene otro proceso', r.status === 400 && /código ES-EDT-DAR-02/.test(r.error), r);
+  r = await ident(idSB, { nombre: 'Proceso editado', tipo: 'Subproceso', padre_id: idPA });
+  esperar('El mismo nombre en otro lugar sí se permite (un subproceso puede llamarse como un proceso)', r.ok, r);
+
+  // Mover un subproceso (con su procedimiento) a otro proceso: hereda la categoría y va al final de sus nuevos hermanos
+  await ident(idSB, { nombre: 'Subproceso hijo', tipo: 'Subproceso', padre_id: idPA });
+  r = await ident(idOtro, { nombre: 'Otro proceso principal', tipo: 'Proceso', categoria: 'Estratégico' });
+  r = await ident(idSB, { nombre: 'Subproceso hijo', tipo: 'Subproceso', padre_id: idOtro });
+  const sb = await de(idSB), pc = await de(idPC);
+  esperar('Al mover un subproceso a otro proceso, él y su procedimiento heredan la categoría del nuevo (Estratégico)', r.ok && sb.padre_id === idOtro && sb.categoria === 'Estratégico' && pc.padre_id === idSB && pc.categoria === 'Estratégico', [sb, pc]);
+  esperar('Y el proceso de origen se queda sin subprocesos', !(await llamar('admin', '/procesos-lideres')).some(p => p.padre_id === idPA), null);
+  // Subir un procedimiento a proceso principal y bajar un proceso a subproceso
+  r = await ident(idPC, { nombre: 'Procedimiento nieto', tipo: 'Proceso', categoria: 'Apoyo' });
+  const pc2 = await de(idPC);
+  esperar('Un procedimiento puede pasar a ser un proceso principal, con la categoría que se elija', r.ok && pc2.tipo === 'Proceso' && pc2.padre_id === null && pc2.categoria === 'Apoyo', pc2);
+  r = await ident(idPA, { nombre: 'Proceso editado', tipo: 'Subproceso', padre_id: idOtro });
+  const pa2 = await de(idPA);
+  esperar('Un proceso principal puede pasar a ser subproceso de otro y toma su categoría', r.ok && pa2.tipo === 'Subproceso' && pa2.padre_id === idOtro && pa2.categoria === 'Estratégico', pa2);
+  h = await llamar('admin', `/procesos/${idPA}/historial`);
+  esperar('Cada cambio de lugar queda en el historial', h.length >= 5 && h.some(x => /pasa a pertenecer a «Otro proceso principal»/.test(x.comentario)), h.map(x => x.comentario));
+
   console.log(fallos ? `\n${fallos} prueba(s) fallaron` : '\nTodo el módulo de administración funciona');
   process.exit(fallos ? 1 : 0);
 })();

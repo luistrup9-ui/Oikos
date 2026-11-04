@@ -649,7 +649,9 @@ table tr.total td { border-top: 2px solid rgba(0, 128, 128, .28); background: rg
 .grafico-ctl .barra path { transition: opacity .2s; }
 .grafico-ctl svg:hover .barra path { opacity: .55; } .grafico-ctl svg .barra:hover path { opacity: 1; }
 .grafico-ctl .barra:hover text.valor { fill: #007b78; }
-.buscar-tabla { width: min(240px, 100%); }
+.buscar-tabla { flex: 0 1 240px; width: 240px; max-width: 100%; }
+.encabezado > .acciones:has(> .buscar-tabla) { flex-wrap: nowrap; } /* el buscador y el botón van en la misma línea */
+@media (max-width: 640px) { .encabezado > .acciones { flex-wrap: wrap; width: 100%; } .encabezado > .acciones .buscar-tabla { flex: 1 1 100%; width: 100%; } }
 #tablaCtl table { display: table; } /* en el celular las tablas de las tarjetas pasan a bloque (se encogen al contenido); esta tiene 3 columnas y debe ocupar todo el ancho */
 .cuenta-ctl { margin-left: auto; font-size: 12.5px; color: var(--ui-ink-2); }
 
@@ -692,3 +694,9 @@ table tr.total td { border-top: 2px solid rgba(0, 128, 128, .28); background: rg
   .expo-nombre { grid-column: 1 / 3; text-align: left; }
   .calor .eje { padding: 2px 0; font-size: 9.5px; line-height: 1.15; overflow-wrap: anywhere; hyphens: auto; } /* los rótulos de los ejes ya no se montan unos sobre otros */
 }
+
+/* Administración → Procesos → vista Lista: compacta para que se vean todas las columnas (también los botones) sin desplazar la tabla de lado */
+.tabla-lista-proc th, .tabla-lista-proc td { padding-left: 9px; padding-right: 9px; } .tabla-lista-proc th.ordenable { padding-right: 22px; }
+.tabla-lista-proc .lider-chip { display: inline-flex; max-width: 170px; white-space: normal; line-height: 1.25; }
+.tabla-lista-proc td .acciones { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+.tabla-lista-proc td .acciones .btn { white-space: nowrap; text-align: center; }

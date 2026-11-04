@@ -445,4 +445,6 @@ async function estadisticas() {
   cargar();
 }
 
-iniciar().then(() => { if (!yo) mostrarLogin(); });
+// Se arranca cuando ya corrieron todos los scripts (cada módulo registra sus rutas al cargar): si no, con la caché fría la primera pantalla podía pedir una ruta que aún no existía
+const arrancar = () => iniciar().then(() => { if (!yo) mostrarLogin(); });
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar); else arrancar();

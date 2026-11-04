@@ -206,6 +206,12 @@ Pruebas: `node prueba-auditorias.js` y `node prueba-evaluaciones.js` (servidor c
   - La clave temporal se muestra una sola vez y se debe cambiar al primer ingreso.
   - Desactivar o cambiar el rol cierra las sesiones abiertas del usuario.
   - Siempre debe quedar al menos un administrador activo.
+- **Buscadores**: Usuarios (por nombre o correo), Cargos (por cargo, área, código o persona) y Procesos (por proceso, código o líder) tienen una barra de búsqueda que no distingue mayúsculas ni tildes. En Procesos, al buscar un subproceso se ve también el proceso del que cuelga, y al buscar un proceso se ve con todos sus subprocesos. Lo buscado se conserva al guardar un cambio y se borra al cambiar de pestaña.
+- **Procesos → Nuevo proceso**: un solo formulario con el **Tipo** (Proceso, Subproceso o Procedimiento). Un proceso pide su categoría (Estratégico, Misional o Apoyo); un subproceso o un procedimiento pide «Pertenece a» (un subproceso cuelga de un proceso; un procedimiento, de un proceso o de un subproceso) y hereda su categoría. El botón «Nuevo subproceso» de cada fila abre el mismo formulario ya con ese proceso elegido.
+- **Procesos → Lista y Editar** (como el administrador de procesos de la otra plataforma): junto al buscador hay dos vistas, **Árbol** (por categoría, con líderes) y **Lista** (una fila por proceso con Clasificación, Padre, Tipo, Código, Nombre, Líder(es) y Versión; se ordena y se pagina como los demás listados). La Lista tiene filtros por **Tipo** y por **Clasificación**, y el nombre lleva a la ficha del proceso.
+  - **Editar** (en las dos vistas, solo el administrador; `PUT /api/procesos/:id/identidad`): nombre, código, tipo, categoría y de quién cuelga. Un proceso no puede pasar a colgar de sí mismo ni de sus subprocesos, y uno con subprocesos no puede ser procedimiento. Si cambia la categoría (o se cambia de padre), la de sus subprocesos y procedimientos cambia con ella. Cada cambio real queda como una versión nueva en el historial; guardar sin cambiar nada no crea versión.
+  - Lo que aún no tiene OIKOS frente a esa plataforma: estado «No publicado» con «Incluir no publicados» (para retirar un proceso sin borrarlo), selector de columnas y la columna «Superior». Las pruebas son `prueba-admin.js` (servidor) y la verificación en navegador.
+  - La migración `014_procesos_nombres_otra_plataforma.sql` corrige tres datos que no coincidían con esa plataforma (nombre de «Control de Calidad del Producto», código de Servicios Generales `ES-SGE-DAR-01` y «Tesorería» con tilde); solo cambia lo que todavía tenga exactamente el valor anterior.
 - **Mi clave** (botón de la barra superior): mínimo 8 caracteres, con letras y números.
 - **Seguridad del ingreso**: 5 intentos fallidos con una cuenta la bloquean 15 minutos desde ese equipo (quien falla con tu correo no te impide entrar desde el tuyo), y 20 fallidos en total bloquean ese equipo.
 - **Seguridad del navegador**: la política (`public/.htaccess`) solo admite scripts propios, sin código dentro del HTML; ver «Interfaz y seguridad del navegador» en `CLAUDE.md`.
@@ -222,6 +228,10 @@ Pruebas: `node prueba-auditorias.js` y `node prueba-evaluaciones.js` (servidor c
   - Orden recomendado: usuarios → documentos → riesgos → controles → mediciones.
 
 Pruebas: `node prueba-admin.js` (servidor corriendo y base limpia).
+
+## Página de inicio
+- Saludo, buscador general, cifras de lo pendiente y «Lo que viene». Los accesos son solo tres: **Mapa de procesos**, **Mi página** y **Administración** (esta última solo para el administrador y el Gestor de Calidad). Los demás módulos se abren desde el menú de arriba y desde el panel izquierdo (Mecanismos de integración está en el panel).
+- La aplicación arranca cuando ya cargaron todos los scripts (antes, con la caché vacía, la primera pantalla podía pedir una ruta que aún no existía).
 
 ## Armazón (igual a Almera)
 

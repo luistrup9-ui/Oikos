@@ -1,6 +1,11 @@
 // SGI — administración de usuarios e importación de datos, y cambio de clave propia
 const ROL_NOMBRE = ROLES; // definidos en app.js
 
+// Búsqueda de las listas de Administración: ¿el texto contiene lo escrito? (sin distinguir mayúsculas ni tildes)
+const sinAcentos = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const coincide = (texto, q) => sinAcentos(texto).includes(sinAcentos(q).trim());
+const buscador = (q, texto) => `<input type="search" id="buscar" class="buscar-tabla" placeholder="${texto}" aria-label="${texto}" autocomplete="off" value="${esc(q)}">`;
+
 // ---------- Mi clave ----------
 async function pedirCambioClave(obligatorio = false) {
   const dlg = $('#modal'), f = $('#modalForm');
@@ -49,7 +54,7 @@ rutas.admin = async function () {
 const mostrarClave = (titulo, quien, clave) => modal(titulo, `<p>Entrégale esta clave temporal a <b>${esc(quien)}</b>. Se pide cambiarla al primer ingreso y no se vuelve a mostrar.</p>
   <input readonly value="${esc(clave)}" class="mono" style="font-size:18px" data-seleccionar>`, { aceptar: 'Listo' });
 
-async function pestanaUsuarios() {
+async function pestanaUsuarios(q0 = '') {
   // Si el servidor aún no tiene cargos (no se reinició tras actualizar), la pestaña sigue funcionando y lo avisa
   const [lista, cargos] = await Promise.all([api('/usuarios'), api('/cargos').catch(() => { aviso('El servidor no tiene el módulo de cargos: reinícialo (npm start) tras actualizar', true); return []; })]);
   // Líder: lista de casillas; cada proceso despliega sus subprocesos y se marcan uno por uno. Los demás roles: un proceso de referencia (opcional).
@@ -93,16 +98,24 @@ async function pestanaUsuarios() {
     ? esc(cat.procesos.filter(p => u.procesos.includes(p.id)).map(p => p.nombre).join(', ')) : '<span class="faltan">Sin procesos</span>';
   const activos = lista.filter(u => u.activo), sinCorreo = activos.filter(u => !u.correo).length, piden = activos.filter(u => u.reinicio_solicitado).length;
   $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${activos.length} usuarios activos${sinCorreo ? ` · <span class="faltan">${sinCorreo} sin correo</span>` : ''}${piden ? ` · <b class="faltan">${piden} piden restablecer su clave</b>` : ''}</p>
-    <div class="acciones">${sinCorreo ? '<button class="btn" id="completarCorreos">Completar correos</button>' : ''}<button class="btn primario" id="nuevo">Nuevo usuario</button></div></div>
-    <div class="tabla-wrap"><table><thead><tr><th>Correo</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Procesos</th><th>Estado</th><th></th></tr></thead><tbody>
-    ${lista.map((u, i) => `<tr style="${u.activo ? '' : 'opacity:.55'}"><td>${u.correo ? esc(u.correo) : '<span class="faltan">Sin correo</span>'}<br><small class="gris mono">${esc(u.usuario)}</small></td>
+    <div class="acciones">${buscador(q0, 'Buscar por nombre o correo…')}${sinCorreo ? '<button class="btn" id="completarCorreos">Completar correos</button>' : ''}<button class="btn primario" id="nuevo">Nuevo usuario</button></div></div>
+    <div id="tablaLista"></div>`;
+  let q = q0; // lo buscado se conserva al guardar un cambio (la lista se vuelve a pedir)
+  const recargar = () => pestanaUsuarios(q);
+  // La tabla se dibuja desde la lista filtrada; cada botón conserva la posición de su usuario en «lista»
+  const dibujar = () => {
+    const filas = lista.map((u, i) => [u, i]).filter(([u]) => coincide(`${u.nombre} ${u.correo || ''} ${u.usuario}`, q));
+    $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table><thead><tr><th>Correo</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Procesos</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${filas.map(([u, i]) => `<tr style="${u.activo ? '' : 'opacity:.55'}"><td>${u.correo ? esc(u.correo) : '<span class="faltan">Sin correo</span>'}<br><small class="gris mono">${esc(u.usuario)}</small></td>
       <td>${esc(u.nombre)}</td><td>${esc(u.cargo)}</td><td>${esc(ROL_NOMBRE[u.rol])}</td><td class="td-procesos">${procesosTexto(u)}</td>
       <td>${u.activo ? 'Activo' : 'Inactivo'}${u.reinicio_solicitado && u.activo ? `<br><b class="pide-clave" title="Lo pidió el ${esc(u.reinicio_solicitado)}">Pidió restablecer su clave</b>` : ''}${u.debe_cambiar && u.activo ? '<br><small class="faltan">Debe cambiar su clave</small>' : ''}</td>
       <td><div class="acciones"><button class="btn chico" data-ed="${i}">Editar</button>
         <button class="btn chico ${u.reinicio_solicitado ? 'primario' : ''}" data-cl="${i}">Restablecer clave</button>
         ${u.id !== yo.id ? `<button class="btn chico ${u.activo ? 'peligro' : ''}" data-ac="${i}">${u.activo ? 'Desactivar' : 'Reactivar'}</button>` : ''}</div></td></tr>`).join('')}
-    </tbody></table></div>`;
-  const recargar = () => pestanaUsuarios();
+    </tbody></table></div>` : `<p class="vacio">Ningún usuario coincide con «${esc(q)}».</p>`;
+    conectar();
+  };
+  $('#buscar').oninput = e => { q = e.target.value; dibujar(); };
   const quien = u => u.correo || u.usuario;
   $('#nuevo').onclick = intentar(async () => {
     const abierto = modal('Nuevo usuario', campos() + '<p class="sub" style="margin:0">Se genera una clave temporal que verás una sola vez.</p>', { aceptar: 'Crear' });
@@ -122,6 +135,7 @@ async function pestanaUsuarios() {
     const r = await api('/usuarios/completar-correos', { method: 'POST', body: v });
     aviso(`${r.actualizados} correos asignados${r.omitidos.length ? ` · ${r.omitidos.length} omitidos (ese correo ya existía)` : ''}`); recargar();
   }));
+  const conectar = () => { // botones de las filas que se ven ahora
   $('#cuerpo').querySelectorAll('[data-ed]').forEach(b => b.onclick = intentar(async () => {
     const u = lista[b.dataset.ed];
     const abierto = modal(`Editar ${u.nombre}`, campos(u)); conectarLista();
@@ -142,23 +156,33 @@ async function pestanaUsuarios() {
     await api('/usuarios/' + u.id, { method: 'PUT', body: { ...u, activo: baja ? 0 : 1 } });
     aviso(baja ? 'Usuario desactivado' : 'Usuario reactivado'); recargar();
   }));
+  };
+  dibujar();
 }
 
 // ---------- Cargos: estructura de cargos con código OIKOS (CAR-ÁREA-NN), jefe y personas ----------
-async function pestanaCargos() {
+async function pestanaCargos(q0 = '') {
   const [cargos, usuarios] = await Promise.all([api('/cargos'), api('/usuarios')]);
   const areas = [...new Map(cargos.map(c => [c.area_sigla, c.area])).entries()];
   const ocupados = cargos.filter(c => c.personas.length).length;
   $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${cargos.filter(c => c.activo).length} cargos activos en ${areas.length} áreas · ${ocupados} con personas asignadas</p>
-    <button class="btn primario" id="nuevoCargo">Nuevo cargo</button></div>
+    <div class="acciones">${buscador(q0, 'Buscar por cargo, área o persona…')}<button class="btn primario" id="nuevoCargo">Nuevo cargo</button></div></div>
     <p class="sub">Si cambia la persona que ocupa un cargo, usa «Personas» para reasignarlo: el código, el área y el jefe se conservan.</p>
-    <div class="tabla-wrap"><table class="tabla-cargos"><thead><tr><th>Código</th><th>Área</th><th>Cargo</th><th>Jefe</th><th>Personas</th><th>Activo</th><th></th></tr></thead><tbody>
-    ${cargos.map((c, i) => `<tr style="${c.activo ? '' : 'opacity:.55'}"><td class="mono">${c.codigo}</td><td>${esc(c.area)}</td><td><b>${esc(c.nombre)}</b></td>
+    <div id="tablaLista"></div>`;
+  let q = q0; // lo buscado se conserva al guardar un cambio (la lista se vuelve a pedir)
+  const recargar = () => pestanaCargos(q);
+  // La tabla se dibuja desde la lista filtrada; cada botón conserva la posición de su cargo en «cargos»
+  const dibujar = () => {
+    const filas = cargos.map((c, i) => [c, i]).filter(([c]) => coincide(`${c.nombre} ${c.codigo} ${c.area} ${c.personas.map(p => p.nombre).join(' ')}`, q));
+    $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table class="tabla-cargos"><thead><tr><th>Código</th><th>Área</th><th>Cargo</th><th>Jefe</th><th>Personas</th><th>Activo</th><th></th></tr></thead><tbody>
+    ${filas.map(([c, i]) => `<tr style="${c.activo ? '' : 'opacity:.55'}"><td class="mono">${c.codigo}</td><td>${esc(c.area)}</td><td><b>${esc(c.nombre)}</b></td>
       <td>${esc(c.jefe || '—')}</td><td>${c.personas.length ? c.personas.map(p => `<span class="chip">${esc(p.nombre)}</span>`).join(' ') : '<span class="gris">Vacante</span>'}</td>
       <td>${c.activo ? 'Sí' : 'No'}</td>
       <td><div class="acciones"><button class="btn chico" data-edc="${i}">Editar</button><button class="btn chico" data-per="${i}">Personas</button></div></td></tr>`).join('')}
-    </tbody></table></div>`;
-  const recargar = () => pestanaCargos();
+    </tbody></table></div>` : `<p class="vacio">Ningún cargo coincide con «${esc(q)}».</p>`;
+    conectar();
+  };
+  $('#buscar').oninput = e => { q = e.target.value; dibujar(); };
   const campos = (c = {}) => `<div class="form">
     <label>Área<select name="area_sigla" id="areaCargo">${areas.map(([s, a]) => `<option value="${s}" ${s === c.area_sigla ? 'selected' : ''}>${esc(a)} (${s})</option>`).join('')}
       <option value="__nueva">+ Nueva área…</option></select></label>
@@ -184,6 +208,7 @@ async function pestanaCargos() {
     const v = await abrir('Nuevo cargo', {}, 'Crear'); if (!v) return;
     const r = await api('/cargos', { method: 'POST', body: v }); aviso(`Cargo ${r.codigo} creado`); recargar();
   });
+  const conectar = () => { // botones de las filas que se ven ahora
   $('#cuerpo').querySelectorAll('[data-edc]').forEach(b => b.onclick = intentar(async () => {
     const c = cargos[b.dataset.edc], v = await abrir(`Editar ${c.codigo}`, c, 'Guardar'); if (!v) return;
     await api('/cargos/' + c.id, { method: 'PUT', body: v }); aviso('Cargo actualizado'); recargar();
@@ -200,48 +225,121 @@ async function pestanaCargos() {
     const r = await api(`/cargos/${c.id}/personas`, { method: 'PUT', body: { usuarios: v.usuarios } });
     aviso(`${r.personas} persona${r.personas === 1 ? '' : 's'} en ${c.nombre}`); recargar();
   }));
+  };
+  dibujar();
 }
 
-// ---------- Procesos: crear procesos y subprocesos y asignar quién los lidera ----------
-async function pestanaProcesos() {
+// ---------- Procesos: crear y editar procesos, subprocesos y procedimientos, y asignar quién los lidera ----------
+// Dos vistas de lo mismo: «Árbol» (por categoría, con sus líderes) y «Lista» (una fila por proceso, con filtros por tipo y clasificación, como el administrador de otra plataforma)
+async function pestanaProcesos(q0 = '', modo0 = 'arbol', filtro0 = {}) {
   const lista = await api('/procesos-lideres');
+  const CATS = ['Estratégico', 'Misional', 'Apoyo'], TIPOS = ['Proceso', 'Subproceso', 'Procedimiento'];
   const hijos = id => lista.filter(p => p.padre_id === id);
+  const nivelDe = p => p.padre_id ? 1 + nivelDe(lista.find(x => x.id === p.padre_id)) : 0;
+  const enArbol = p => [p, ...hijos(p.id).flatMap(enArbol)];                                           // cada proceso seguido de sus subprocesos, a cualquier profundidad
+  const enOrden = CATS.flatMap(c => lista.filter(p => !p.padre_id && p.categoria === c).flatMap(enArbol)); // orden de lectura: por categoría y, dentro, cada proceso con su rama
   const chips = p => p.lideres.map(l => `<span class="chip lider-chip" title="${esc(l.cargo || l.usuario)}">${esc(l.nombre)}
         <button type="button" class="quitar-lider" data-quitar="${p.id}:${l.id}" aria-label="Quitar a ${esc(l.nombre)} como líder">×</button></span>`).join(' ');
-  // Cada proceso y cada subproceso tiene sus propios líderes
+  const textoDe = p => `${p.nombre} ${p.codigo || ''} ${p.lideres.map(l => l.nombre).join(' ')}`;
+  // Vista árbol: cada proceso y cada subproceso tiene sus propios líderes
   const fila = (p, nivel) => `<tr>
     <td style="padding-left:${8 + nivel * 22}px">${nivel ? '<span class="gris">↳</span> ' : ''}${p.codigo ? `<span class="mono gris">${esc(p.codigo)}</span> ` : ''}<b>${esc(p.nombre)}</b>${nivel ? ` <span class="gris">${esc(p.tipo)}</span>` : ''}</td>
     <td>${p.lideres.length ? chips(p) : '<span class="faltan">Sin líder</span>'}</td>
-    <td><div class="acciones"><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
+    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
       ${nivel ? '' : `<button class="btn chico" data-sub="${p.id}">Nuevo subproceso</button>`}</div></td></tr>`;
-  const rama = (p, nivel) => fila(p, nivel) + hijos(p.id).map(h => rama(h, nivel + 1)).join(''); // subprocesos a cualquier profundidad
-  const grupo = c => {
-    const raices = lista.filter(p => !p.padre_id && p.categoria === c);
-    return raices.length ? `<tr class="grupo-cat"><th colspan="3">${c}</th></tr>${raices.map(p => rama(p, 0)).join('')}` : '';
+  // ver: conjunto de procesos que se muestran (null = todos). Con una búsqueda se ve lo que coincide con su rama completa (sus subprocesos) y los procesos de los que cuelga
+  const rama = (p, nivel, ver) => !ver || ver.has(p.id) ? fila(p, nivel) + hijos(p.id).map(h => rama(h, nivel + 1, ver)).join('') : '';
+  const grupo = (c, ver) => {
+    const raices = lista.filter(p => !p.padre_id && p.categoria === c && (!ver || ver.has(p.id)));
+    return raices.length ? `<tr class="grupo-cat"><th colspan="3">${c}</th></tr>${raices.map(p => rama(p, 0, ver)).join('')}` : '';
+  };
+  // Vista lista: Clasificación, Padre, Tipo, Código, Nombre, Líder(es) y Versión; se ordena y se pagina como los demás listados
+  const filaLista = p => { const padre = lista.find(x => x.id === p.padre_id); return `<tr>
+    <td>${esc(p.categoria)}</td><td>${padre ? esc(padre.nombre) : '<span class="gris">—</span>'}</td><td>${esc(p.tipo)}</td>
+    <td class="mono">${p.codigo ? esc(p.codigo) : '<span class="gris">—</span>'}</td><td><a href="#/proceso/${p.id}">${esc(p.nombre)}</a></td>
+    <td>${p.lideres.length ? chips(p) : '<span class="faltan">Sin líder</span>'}</td><td class="num">${p.version}</td>
+    <td><div class="acciones"><button class="btn chico" data-editar="${p.id}">Editar</button><button class="btn chico" data-lider="${p.id}">Asignar líder</button>
+      ${p.padre_id ? '' : `<button class="btn chico" data-sub="${p.id}">Nuevo subproceso</button>`}</div></td></tr>`; };
+
+  let q = q0, modo = modo0, tipoF = filtro0.tipo || '', catF = filtro0.cat || ''; // lo buscado y la vista se conservan al guardar un cambio (la lista se vuelve a pedir)
+  const visibles = () => {
+    if (!q.trim()) return null;
+    const ver = new Set(), abajo = p => { ver.add(p.id); hijos(p.id).forEach(abajo); }, arriba = p => { ver.add(p.id); const pa = lista.find(x => x.id === p.padre_id); if (pa) arriba(pa); };
+    lista.filter(p => coincide(textoDe(p), q)).forEach(p => { abajo(p); arriba(p); });
+    return ver;
   };
   $('#cuerpo').innerHTML = `<div class="encabezado"><p class="sub" style="margin:0">${lista.filter(p => !p.padre_id).length} procesos y ${lista.filter(p => p.padre_id).length} subprocesos · ${lista.filter(p => p.lideres.length).length} con líder</p>
-    <button class="btn primario" id="nuevoProceso">Nuevo proceso</button></div>
+    <div class="acciones">${buscador(q0, 'Buscar proceso o líder…')}
+      <div class="tabs" style="margin:0" role="group" aria-label="Vista"><button type="button" data-modo="arbol">Árbol</button><button type="button" data-modo="lista">Lista</button></div>
+      <button class="btn primario" id="nuevoProceso">Nuevo proceso</button></div></div>
     <p class="sub">Un Líder puede liderar varios procesos y subprocesos, y un proceso varios líderes. Al asignarlo a un proceso principal se le marcan también sus subprocesos; el detalle se ajusta en Usuarios → Editar. Ve el mapa y los documentos vigentes de todos, pero solo gestiona lo suyo.</p>
-    <div class="tabla-wrap"><table class="tabla-procesos" data-dt="1"><thead><tr><th>Proceso</th><th>Líder(es)</th><th></th></tr></thead><tbody>
-      ${['Estratégico', 'Misional', 'Apoyo'].map(grupo).join('')}</tbody></table></div>`;
+    <div class="controles" id="filtrosLista" hidden>
+      <label class="en-linea">Tipo <select id="fTipo"><option value="">Todos</option>${TIPOS.map(t => `<option ${t === tipoF ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="en-linea">Clasificación <select id="fCat"><option value="">Todas</option>${CATS.map(c => `<option ${c === catF ? 'selected' : ''}>${c}</option>`).join('')}</select></label></div>
+    <div id="tablaLista"></div>`;
+  const dibujar = () => {
+    $('#cuerpo').querySelectorAll('[data-modo]').forEach(b => b.classList.toggle('activo', b.dataset.modo === modo));
+    $('#filtrosLista').hidden = modo !== 'lista';
+    const sinResultados = `<p class="vacio">Ningún proceso coincide con ${q.trim() ? `«${esc(q)}»` : 'los filtros elegidos'}.</p>`;
+    if (modo === 'lista') {
+      const filas = enOrden.filter(p => (!tipoF || p.tipo === tipoF) && (!catF || p.categoria === catF) && coincide(textoDe(p), q));
+      $('#tablaLista').innerHTML = filas.length ? `<div class="tabla-wrap"><table class="tabla-procesos tabla-lista-proc"><thead><tr><th>Clasificación</th><th>Padre</th><th>Tipo</th><th>Código</th><th>Nombre</th><th>Líder(es)</th><th class="num">Versión</th><th></th></tr></thead>
+        <tbody>${filas.map(filaLista).join('')}</tbody></table></div>` : sinResultados;
+    } else {
+      const filas = CATS.map(c => grupo(c, visibles())).join('');
+      $('#tablaLista').innerHTML = filas ? `<div class="tabla-wrap"><table class="tabla-procesos" data-dt="1"><thead><tr><th>Proceso</th><th>Líder(es)</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : sinResultados;
+    }
+    conectar();
+  };
+  $('#buscar').oninput = e => { q = e.target.value; dibujar(); };
+  $('#cuerpo').querySelectorAll('[data-modo]').forEach(b => b.onclick = () => { modo = b.dataset.modo; dibujar(); });
+  $('#fTipo').onchange = e => { tipoF = e.target.value; dibujar(); };
+  $('#fCat').onchange = e => { catF = e.target.value; dibujar(); };
 
-  const recargar = async () => { cat = await api('/catalogos'); cargarSistemas(); await pestanaProcesos(); }; // el catálogo alimenta el mapa y el árbol lateral
+  const recargar = async () => { cat = await api('/catalogos'); cargarSistemas(); await pestanaProcesos(q, modo, { tipo: tipoF, cat: catF }); }; // el catálogo alimenta el mapa y el árbol lateral
 
-  const nuevo = async padre => {
-    const v = await modal(padre ? `Nuevo subproceso de ${padre.nombre}` : 'Nuevo proceso', `<div class="form">
-      <label class="ancho">Nombre<input name="nombre" required maxlength="120" autofocus></label>
-      <label>Código <small>(opcional)</small><input name="codigo" maxlength="30" placeholder="ES-XXX-XXX-01"></label>
-      <label>Sigla <small>(opcional)</small><input name="sigla" maxlength="6"></label>
-      ${padre ? `<label class="ancho">Tipo<select name="tipo"><option>Subproceso</option><option>Procedimiento</option></select></label>
-        <p class="sub ancho" style="margin:0">Hereda la categoría de su proceso (${esc(padre.categoria)}).</p>`
-      : `<label class="ancho">Categoría<select name="categoria">${['Estratégico', 'Misional', 'Apoyo'].map(c => `<option ${c === 'Apoyo' ? 'selected' : ''}>${c}</option>`).join('')}</select></label>`}</div>`, { aceptar: 'Crear' });
+  // Un solo formulario para crear y para editar. El tipo decide si es un proceso principal (con su categoría) o si cuelga de otro (y hereda su categoría).
+  // Al editar, no puede colgar de sí mismo ni de sus subprocesos, y un proceso con subprocesos no puede ser un procedimiento.
+  const opcionesPadre = (tipo, elegido, excluidos) => '<option value="">— Elige —</option>' + lista.filter(p => !p.padre_id).flatMap(enArbol).filter(p => !excluidos.includes(p.id) && (tipo === 'Procedimiento' || !p.padre_id))
+    .map(p => `<option value="${p.id}" ${p.id === elegido ? 'selected' : ''}>${'↳ '.repeat(nivelDe(p))}${esc(p.nombre)}${p.padre_id ? ` (${esc(p.tipo)})` : ''}</option>`).join('');
+  const formulario = async ({ titulo, aceptar, p = null, padreInicial = null }) => {
+    const excluidos = p ? enArbol(p).map(x => x.id) : [], tipos = p && hijos(p.id).length ? TIPOS.filter(t => t !== 'Procedimiento') : TIPOS;
+    const abierto = modal(titulo, `<div class="form">
+      <label class="ancho">Tipo<select name="tipo">${tipos.map(t => `<option ${t === (p ? p.tipo : padreInicial ? 'Subproceso' : 'Proceso') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="ancho" data-si-padre>Pertenece a <small>(el proceso del que cuelga)</small><select name="padre_id"></select></label>
+      <label class="ancho">Nombre<input name="nombre" required maxlength="120" autofocus value="${esc(p?.nombre)}"></label>
+      <label>Código <small>(opcional)</small><input name="codigo" maxlength="30" placeholder="ES-XXX-XXX-01" value="${esc(p?.codigo)}"></label>
+      ${p ? '' : '<label>Sigla <small>(opcional)</small><input name="sigla" maxlength="6"></label>'}
+      <label class="ancho" data-si-proceso>Categoría<select name="categoria">${CATS.map(c => `<option ${c === (p?.categoria || 'Apoyo') ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+      <p class="sub ancho" style="margin:0" data-si-padre>Hereda la categoría del proceso al que pertenece. Un subproceso cuelga de un proceso; un procedimiento puede colgar de un proceso o de un subproceso.</p>
+      ${p ? '<p class="sub ancho" style="margin:0">Cada cambio queda como una versión nueva en el historial del proceso. Si cambia la categoría, también cambia la de sus subprocesos.</p>' : ''}</div>`, { aceptar });
+    const f = $('#modalForm'), tipo = f.querySelector('[name=tipo]'), padreSel = f.querySelector('[name=padre_id]');
+    const ver = () => {
+      const cuelga = tipo.value !== 'Proceso', previo = Number(padreSel.value) || padreInicial?.id;
+      f.querySelectorAll('[data-si-padre]').forEach(e => e.hidden = !cuelga); f.querySelectorAll('[data-si-proceso]').forEach(e => e.hidden = cuelga);
+      padreSel.disabled = !cuelga; padreSel.required = cuelga;                                         // lo deshabilitado no se envía
+      padreSel.innerHTML = opcionesPadre(tipo.value, previo, excluidos);
+    };
+    tipo.onchange = ver; ver();
+    return abierto;
+  };
+  const nuevo = async (padre = null) => {
+    const v = await formulario({ titulo: padre ? `Nuevo subproceso de ${padre.nombre}` : 'Nuevo proceso', aceptar: 'Crear', padreInicial: padre });
     if (!v) return;
-    const r = await api('/procesos', { method: 'POST', body: { ...v, padre_id: padre?.id || null } });
-    aviso(padre ? 'Subproceso creado' : 'Proceso creado'); await recargar();
+    const r = await api('/procesos', { method: 'POST', body: { nombre: v.nombre, codigo: v.codigo, sigla: v.sigla, tipo: v.tipo, ...(v.tipo === 'Proceso' ? { categoria: v.categoria } : { padre_id: Number(v.padre_id) }) } });
+    aviso(`${v.tipo} creado`); await recargar();
     return r;
   };
+  const editar = async p => {
+    const v = await formulario({ titulo: `Editar ${p.nombre}`, aceptar: 'Guardar', p, padreInicial: lista.find(x => x.id === p.padre_id) || null });
+    if (!v) return;
+    const r = await api(`/procesos/${p.id}/identidad`, { method: 'PUT', body: { nombre: v.nombre, codigo: v.codigo, tipo: v.tipo, ...(v.tipo === 'Proceso' ? { categoria: v.categoria } : { padre_id: Number(v.padre_id) }) } });
+    aviso(r.sin_cambios ? 'No cambió nada' : `${v.tipo} actualizado (versión ${r.version})`); await recargar();
+  };
   $('#nuevoProceso').onclick = intentar(() => nuevo(null));
+  const conectar = () => { // botones de las filas que se ven ahora
   $('#cuerpo').querySelectorAll('[data-sub]').forEach(b => b.onclick = intentar(() => nuevo(lista.find(p => p.id === Number(b.dataset.sub)))));
+  $('#cuerpo').querySelectorAll('[data-editar]').forEach(b => b.onclick = intentar(() => editar(lista.find(p => p.id === Number(b.dataset.editar)))));
 
   $('#cuerpo').querySelectorAll('[data-lider]').forEach(b => b.onclick = intentar(async () => {
     const p = lista.find(x => x.id === Number(b.dataset.lider));
@@ -263,6 +361,8 @@ async function pestanaProcesos() {
     await api(`/procesos/${pid}/lideres/${uid}`, { method: 'DELETE' });
     aviso(`${l.nombre} ya no lidera ${p.nombre}`); await recargar();
   }));
+  };
+  dibujar();
 }
 
 async function pestanaImportar() {
